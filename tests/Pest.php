@@ -8,16 +8,29 @@ use App\Events\MessageDeleted;
 use App\Events\MessageRead;
 use App\Events\MessageSent;
 use App\Events\MessageUpdated;
+use App\Events\RoomAdmitted;
+use App\Events\RoomDenied;
+use App\Events\RoomEnded;
+use App\Events\RoomJoinRequested;
+use App\Events\RoomParticipantJoined;
+use App\Events\RoomParticipantLeft;
+use App\Events\RoomRoleChanged;
 use App\Models\Chat;
 use App\Models\ChatMember;
 use App\Models\Message;
+use App\Models\Room;
+use App\Models\RoomParticipant;
 use App\Models\User;
+use App\Services\LiveKitService;
 use Carbon\CarbonInterface;
+use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\FakeLiveKitService;
 use Tests\TestCase;
 
 pest()->extend(TestCase::class)
@@ -116,6 +129,8 @@ function fakeBroadcasts(): void
     Event::fake([
         MessageSent::class, MessageUpdated::class, MessageDeleted::class, MessageRead::class,
         ChatUpdated::class, ChatMemberAdded::class, ChatMemberRemoved::class,
+        RoomParticipantJoined::class, RoomParticipantLeft::class, RoomJoinRequested::class,
+        RoomAdmitted::class, RoomDenied::class, RoomEnded::class, RoomRoleChanged::class,
     ]);
 }
 
@@ -141,4 +156,78 @@ function useReverbForChannelAuth(): void
     config(['broadcasting.default' => 'reverb']);
     Broadcast::purge('null');
     require base_path('routes/channels.php');
+}
+
+/** Replace LiveKit with a recording fake that never touches the network. */
+function fakeLiveKit(): FakeLiveKitService
+{
+    $fake = new FakeLiveKitService;
+    app()->instance(LiveKitService::class, $fake);
+
+    return $fake;
+}
+
+/**
+ * A room with its host. Pass extra attributes to override defaults, e.g. ['status' => 'active'].
+ * Use the returned room's `host` relation or $room->host_id for the host.
+ */
+function makeRoom(?User $host = null, array $attributes = []): Room
+{
+    return Room::factory()->create(array_merge(['host_id' => ($host ?? User::factory()->create())->id], $attributes));
+}
+
+/** Add a participant row to a room, optionally already connected to LiveKit. */
+function addParticipant(Room $room, ?User $user = null, array $attributes = []): RoomParticipant
+{
+    return RoomParticipant::factory()->create(array_merge([
+        'room_id' => $room->id,
+        'user_id' => ($user ?? User::factory()->create())->id,
+    ], $attributes));
+}
+
+/**
+ * A webhook Authorization token shaped like LiveKit's: a JWT with the API key as issuer and the
+ * base64 SHA-256 of the raw body in the `sha256` claim. It has no subject and no video grant.
+ *
+ * @param  array<string, mixed>  $overrides  claims to replace, e.g. ['exp' => time() - 60]
+ */
+function livekitWebhookToken(string $body, array $overrides = [], ?string $secret = null): string
+{
+    $now = time();
+
+    return JWT::encode(array_merge([
+        'iss' => config('services.livekit.api_key'),
+        'nbf' => $now,
+        'exp' => $now + 600,
+        'sha256' => base64_encode(hash('sha256', $body, true)),
+    ], $overrides), $secret ?? config('services.livekit.api_secret'), 'HS256');
+}
+
+/**
+ * Deliver a LiveKit webhook to the app, signed the way the LiveKit server signs it.
+ *
+ * Options: 'secret' (sign with another secret), 'signedBody' (sign a different body than the one sent),
+ * 'claims' (override token claims), 'authorization' (send this header value instead; null = none).
+ *
+ * @param  array<string, mixed>  $event  e.g. ['event' => 'participant_joined', 'room' => ['name' => '…'], …]
+ */
+function sendLiveKitWebhook($test, array $event, array $options = [])
+{
+    $body = json_encode(array_merge(['id' => 'EV_'.Str::random(8), 'createdAt' => (string) now()->timestamp], $event));
+    $token = livekitWebhookToken($options['signedBody'] ?? $body, $options['claims'] ?? [], $options['secret'] ?? null);
+
+    $headers = array_key_exists('authorization', $options)
+        ? ($options['authorization'] === null ? [] : ['HTTP_AUTHORIZATION' => $options['authorization']])
+        : ['HTTP_AUTHORIZATION' => $token];
+
+    return $test->call('POST', '/api/v1/webhooks/livekit', [], [], [], $headers + ['CONTENT_TYPE' => 'application/webhook+json'], $body);
+}
+
+/** Shorthand for the two events that matter most. */
+function livekitEvent(Room $room, string $name, ?User $user = null, array $extra = []): array
+{
+    return array_merge([
+        'event' => $name,
+        'room' => ['sid' => 'RM_test', 'name' => $room->livekit_room_name],
+    ], $user ? ['participant' => ['sid' => 'PA_'.substr($user->id, 0, 8), 'identity' => $user->id]] : [], $extra);
 }

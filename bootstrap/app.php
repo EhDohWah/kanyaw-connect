@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\LiveKitException;
+use App\Exceptions\RoomConflictException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(fn (LiveKitException $e) => response()->json(['message' => $e->getMessage()], 503));
+        $exceptions->render(fn (RoomConflictException $e) => response()->json(['message' => $e->getMessage(), 'code' => $e->errorCode], $e->status));
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

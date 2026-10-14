@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Services\LiveKitService;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -16,7 +18,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(LiveKitService::class, fn () => new LiveKitService(config('services.livekit')));
     }
 
     /**
@@ -38,6 +40,15 @@ class AppServiceProvider extends ServiceProvider
 
         // Clients ping every 30-60 s; this leaves room for a few devices per user.
         RateLimiter::for('heartbeat', fn (Request $request) => Limit::perMinute(12)->by($request->user()?->id ?: $request->ip()));
+
+        // Guards the room password against guessing: per person, per room.
+        RateLimiter::for('room-join', function (Request $request) {
+            // Throttling runs before route-model binding, so this is usually still the raw id.
+            $room = $request->route('room');
+            $roomId = $room instanceof Model ? $room->getKey() : $room;
+
+            return Limit::perMinute(20)->by(($request->user()?->id ?: $request->ip()).'|'.$roomId);
+        });
 
         // 30 messages per minute per user, across all chats.
         RateLimiter::for('messages', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));

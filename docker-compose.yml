@@ -35,6 +35,9 @@ services:
     image: livekit/livekit-server:latest
     restart: unless-stopped
     command: --config /etc/livekit.yaml
+    extra_hosts:
+      # lets the container reach the API running on the host (needed on Linux; built in on Docker Desktop)
+      - "host.docker.internal:host-gateway"
     ports:
       - "7880:7880"          # HTTP / WebSocket signalling
       - "7881:7881"          # WebRTC over TCP (fallback)

@@ -1,6 +1,6 @@
 # LiveKit server config for LOCAL DEVELOPMENT.
 # The key/secret must match LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env.
-# For production (public IP, TLS, built-in TURN) see the README (Phase 6).
+# For production (public IP, TLS, built-in TURN) see the README.
 port: 7880
 
 rtc:
@@ -12,8 +12,10 @@ rtc:
 keys:
   devkey: secret-secret-secret-secret-secret-secret
 
-# Webhooks are configured in Phase 4 once POST /api/v1/webhooks/livekit exists:
-# webhook:
-#   api_key: devkey
-#   urls:
-#     - http://host.docker.internal:8000/api/v1/webhooks/livekit
+# LiveKit reports who joined and left to the API, which is the source of truth for room membership.
+# The API listens on the host (php artisan serve, port 8000); host.docker.internal reaches the host
+# from inside the container (see extra_hosts in docker-compose.yml).
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:8000/api/v1/webhooks/livekit

@@ -22,6 +22,12 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="LIVEKIT_URL" value="ws://livekit.test:7880"/>
+        <env name="LIVEKIT_HOST" value="http://livekit.test:7880"/>
+        <env name="LIVEKIT_API_KEY" value="test-api-key"/>
+        <env name="LIVEKIT_API_SECRET" value="test-api-secret-test-api-secret-0123456789"/>
+        <env name="LIVEKIT_TOKEN_TTL" value="3600"/>
+        <env name="ROOM_HOST_TRANSFER_GRACE" value="0"/>
         <env name="REVERB_APP_ID" value="100001"/>
         <env name="REVERB_APP_KEY" value="test-key"/>
         <env name="REVERB_APP_SECRET" value="test-secret"/>

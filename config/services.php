@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'livekit' => [
+        // Address clients (browsers, apps) connect to, e.g. wss://livekit.example.com
+        'url' => env('LIVEKIT_URL', 'ws://localhost:7880'),
+        // Address this server uses for LiveKit's HTTP API (must be http:// or https://, not ws://)
+        'host' => env('LIVEKIT_HOST', 'http://localhost:7880'),
+        'api_key' => env('LIVEKIT_API_KEY'),
+        'api_secret' => env('LIVEKIT_API_SECRET'),
+        // Lifetime of a participant token in seconds
+        'token_ttl' => (int) env('LIVEKIT_TOKEN_TTL', 3600),
+    ],
+
 ];

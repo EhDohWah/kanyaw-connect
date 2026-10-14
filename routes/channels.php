@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ChatMember;
+use App\Models\RoomParticipant;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
@@ -18,7 +19,8 @@ use Illuminate\Support\Str;
 |   presence-chat.{chatId}   same members; also tells who is currently in the chat and carries
 |                            typing indicators (client whispers, no server endpoint)
 |
-| presence-room.{roomId} (video rooms) is added in Phase 4, with the rooms table.
+|   presence-room.{roomId}   video room: admitted participants and the host only (people waiting
+|                            to be let in are not on it; they are told on their private-user channel)
 */
 
 Broadcast::channel('user.{userId}', fn (User $user, string $userId) => $user->getKey() === $userId);
@@ -32,6 +34,23 @@ Broadcast::channel('chat.{chatId}', function (User $user, string $chatId) {
     $isMember = ChatMember::where('chat_id', $chatId)->where('user_id', $user->getKey())->exists();
 
     return $isMember ? [
+        'id' => $user->getKey(),
+        'name' => $user->name,
+        'avatar_url' => $user->avatar_thumb_url,
+    ] : false;
+});
+
+Broadcast::channel('room.{roomId}', function (User $user, string $roomId) {
+    if (! Str::isUuid($roomId)) {
+        return false;
+    }
+
+    $admitted = RoomParticipant::where('room_id', $roomId)
+        ->where('user_id', $user->getKey())
+        ->where('admission', 'admitted')
+        ->exists();
+
+    return $admitted ? [
         'id' => $user->getKey(),
         'name' => $user->name,
         'avatar_url' => $user->avatar_thumb_url,

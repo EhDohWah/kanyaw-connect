@@ -71,10 +71,7 @@ class SendMessage
 
         $attachment?->update(['message_id' => $message->getKey()]);
 
-        // Keep the chat's activity time monotonic even if two sends finish out of order.
-        Chat::whereKey($chat->getKey())
-            ->where(fn ($q) => $q->whereNull('last_message_at')->orWhere('last_message_at', '<', Message::microseconds($message->created_at)))
-            ->update(['last_message_at' => Message::microseconds($message->created_at)]);
+        $chat->bumpLastMessageAt($message->created_at);
 
         // Sending a message means the sender has read everything up to it.
         $chat->chatMembers()->where('user_id', $sender->getKey())->update([

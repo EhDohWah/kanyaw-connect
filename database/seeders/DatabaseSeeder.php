@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Actions\Chats\CreateDirectChat;
 use App\Actions\Chats\CreateGroupChat;
 use App\Actions\Messages\SendMessage;
+use App\Actions\Rooms\CreateRoom;
 use App\Events\ChatMemberAdded;
 use App\Events\ChatMemberRemoved;
 use App\Events\ChatUpdated;
@@ -12,6 +13,13 @@ use App\Events\MessageDeleted;
 use App\Events\MessageRead;
 use App\Events\MessageSent;
 use App\Events\MessageUpdated;
+use App\Events\RoomAdmitted;
+use App\Events\RoomDenied;
+use App\Events\RoomEnded;
+use App\Events\RoomJoinRequested;
+use App\Events\RoomParticipantJoined;
+use App\Events\RoomParticipantLeft;
+use App\Events\RoomRoleChanged;
 use App\Models\Chat;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -23,7 +31,7 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      *
-     * Every seeded user has the password "password". Later phases add a video room.
+     * Every seeded user has the password "password".
      */
     public function run(): void
     {
@@ -31,6 +39,8 @@ class DatabaseSeeder extends Seeder
         Event::fake([
             ChatMemberAdded::class, ChatMemberRemoved::class, ChatUpdated::class,
             MessageDeleted::class, MessageRead::class, MessageSent::class, MessageUpdated::class,
+            RoomAdmitted::class, RoomDenied::class, RoomEnded::class, RoomJoinRequested::class,
+            RoomParticipantJoined::class, RoomParticipantLeft::class, RoomRoleChanged::class,
         ]);
 
         $users = collect(['Saw Eh Doh', 'Naw Paw Say', 'Saw Htoo Lay', 'Naw Mu Moo', 'Saw Kler Wah'])
@@ -61,6 +71,16 @@ class DatabaseSeeder extends Seeder
         $this->say($group, $eh, 'Welcome everyone to the committee chat.');
         $this->say($group, $mu, 'Thank you! Glad to be here.');
         $this->say($group, $kler, 'When is the next meeting?');
+
+        // One video room for the committee, linked to the group chat (so all its members are invited).
+        app(CreateRoom::class)->handle($eh, [
+            'name' => 'Committee meeting',
+            'description' => 'Monthly planning call',
+            'chat_id' => $group->id,
+            'scheduled_at' => now()->addDays(2)->setTime(19, 0),
+            'duration_minutes' => 60,
+            'waiting_room_enabled' => true,
+        ]);
     }
 
     private function say(Chat $chat, User $sender, string $text): void

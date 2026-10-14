@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ChatType;
 use App\Models\Concerns\HasMicrosecondTimestamps;
+use Carbon\CarbonInterface;
 use Database\Factories\ChatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -120,6 +121,17 @@ class Chat extends Model
         }
 
         return $this->membershipCache[$user->getKey()];
+    }
+
+    /**
+     * Record chat activity at $at without ever moving last_message_at backwards, even if two
+     * messages finish committing out of order.
+     */
+    public function bumpLastMessageAt(CarbonInterface $at): void
+    {
+        self::whereKey($this->getKey())
+            ->where(fn ($q) => $q->whereNull('last_message_at')->orWhere('last_message_at', '<', self::microseconds($at)))
+            ->update(['last_message_at' => self::microseconds($at)]);
     }
 
     /**

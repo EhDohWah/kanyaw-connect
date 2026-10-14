@@ -6,9 +6,13 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ChatMemberController;
 use App\Http\Controllers\Api\V1\ChatReadController;
+use App\Http\Controllers\Api\V1\LiveKitWebhookController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
 use App\Http\Controllers\Api\V1\PresenceController;
+use App\Http\Controllers\Api\V1\RoomController;
+use App\Http\Controllers\Api\V1\RoomLifecycleController;
+use App\Http\Controllers\Api\V1\RoomParticipantController;
 use Illuminate\Support\Facades\Route;
 
 // All routes below are served under /api/v1 (the /api prefix comes from bootstrap/app.php).
@@ -24,6 +28,9 @@ Route::prefix('v1')->group(function () {
         Route::get('attachments/{attachment}/file', [AttachmentFileController::class, 'file'])->name('attachments.file');
         Route::get('attachments/{attachment}/thumbnail', [AttachmentFileController::class, 'thumbnail'])->name('attachments.thumbnail');
     });
+
+    // Called by the LiveKit server, not by clients: authorised by the signature on the request.
+    Route::post('webhooks/livekit', LiveKitWebhookController::class);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('me', [MeController::class, 'show']);
@@ -51,6 +58,26 @@ Route::prefix('v1')->group(function () {
             Route::post('messages', [MessageController::class, 'store'])->middleware('throttle:messages');
             Route::post('read', [ChatReadController::class, 'store']);
             Route::post('attachments', [AttachmentController::class, 'store']);
+        });
+
+        Route::get('rooms', [RoomController::class, 'index']);
+        Route::post('rooms', [RoomController::class, 'store']);
+
+        // Everything under /rooms/{room} needs permission to see the room; the middleware runs before
+        // validation, so people who may not see it get 403 whatever they send.
+        Route::prefix('rooms/{room}')->middleware('can:view,room')->group(function () {
+            Route::get('/', [RoomController::class, 'show']);
+            Route::post('join', [RoomController::class, 'join'])->middleware(['can:join,room', 'throttle:room-join']);
+
+            Route::post('admit/{user}', [RoomParticipantController::class, 'admit'])->middleware('can:manage,room');
+            Route::post('deny/{user}', [RoomParticipantController::class, 'deny'])->middleware('can:manage,room');
+            Route::post('participants/{user}/remove', [RoomParticipantController::class, 'remove'])->middleware('can:moderate,room,user');
+            Route::post('participants/{user}/mute', [RoomParticipantController::class, 'mute'])->middleware('can:moderate,room,user');
+
+            Route::post('lock', [RoomLifecycleController::class, 'lock'])->middleware('can:host,room');
+            Route::post('unlock', [RoomLifecycleController::class, 'unlock'])->middleware('can:host,room');
+            Route::post('end', [RoomLifecycleController::class, 'end'])->middleware('can:host,room');
+            Route::post('co-hosts/{user}', [RoomParticipantController::class, 'coHost'])->middleware('can:appointCoHost,room,user');
         });
 
         Route::patch('messages/{message}', [MessageController::class, 'update'])->middleware('can:update,message');

@@ -1,7 +1,7 @@
 # Karen Connect — Backend API
 
 Laravel API for a private chat + video platform. See the build spec for the phase plan.
-**Status: Phase 3 (real-time & presence) complete.** The full README (deployment, Reverb, LiveKit/TURN) is written in Phase 6.
+**Status: Phase 4 (video rooms with LiveKit) complete.** The full README (deployment, Reverb, LiveKit/TURN) is written in Phase 6.
 
 ## Local setup
 
@@ -15,6 +15,7 @@ php artisan storage:link                 # serves uploaded avatars from /storage
 php artisan serve
 ```
 
+Video rooms also need LiveKit (`docker compose up -d livekit`, see [Video rooms](#video-rooms-phase-4)).
 Real-time needs three more processes (each in its own terminal):
 
 ```bash
@@ -122,3 +123,70 @@ Notes for the frontend:
 - Leave `REDIS_QUEUE_BLOCK_FOR` at its default (5): the queue worker then picks up events immediately instead of polling every 3 seconds.
 - Reverb rejects published events larger than `REVERB_MAX_REQUEST_SIZE` (set to 100 KB here; the library default of 10 KB is too small for 5000 Burmese/Karen characters).
 - In production set `REVERB_ALLOWED_ORIGINS` to the frontend origin(s) and use `REVERB_SCHEME=https` behind a TLS proxy.
+
+## Video rooms (Phase 4)
+
+Video runs on a self-hosted [LiveKit](https://livekit.io) server, which handles all WebRTC signalling, SDP and ICE. The API never touches media: it decides **who may join** and hands out a signed token; the frontend connects to LiveKit with `livekit-client` using that token.
+
+### Setup
+
+- `docker compose up -d livekit` starts LiveKit with `docker/livekit/livekit.yaml` (local development; the API key and secret there must match `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` in `.env`).
+- `LIVEKIT_URL` is what **clients** connect to (`ws://` / `wss://`); `LIVEKIT_HOST` is what **the API** calls (`http://` / `https://`). They are different on purpose.
+- The `webhook:` section of `livekit.yaml` must point at `POST /api/v1/webhooks/livekit`. LiveKit reports who joined and left there; those webhooks are the **only** thing that sets `joined_at` / `left_at`. Without them, rooms never become active and seats are never freed.
+- PHP needs the **`bcmath`** extension (it is declared in `composer.json`): LiveKit's protobuf library uses it to read webhook JSON, and without it every webhook would fail.
+- Optional: `ROOM_HOST_TRANSFER_GRACE=30` waits 30 seconds before handing the host role on when the host's connection drops. The default `0` hands it over immediately. On unstable mobile connections a grace period stops a brief drop from costing the host their role. It needs the queue worker.
+
+### Endpoints
+
+All under `/api/v1`, bearer token required, except the webhook.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/rooms` | `{ name, description?, scheduled_at?, duration_minutes?, chat_id?, password?, waiting_room_enabled?, max_participants? (2–100, default 50) }`. With `scheduled_at` the room is `scheduled`, otherwise `instant`. With `chat_id` (you must be a member) every member of that chat is invited and a `system` message is posted into the chat (`metadata`: `event=room_created`, `room_id`, `host_id`) |
+| GET | `/rooms` | rooms you host, were invited to through a chat, or asked to join; not ended ones. `?filter=hosting\|invited\|upcoming`, cursor-paginated |
+| GET | `/rooms/{room}` | `has_password` (never the password), `present_count`, `my_participation`; the host and co-hosts also get `waiting_participants` |
+| POST | `/rooms/{room}/join` | `{ password? }` → `{ status: "admitted", token, livekit_url, room }` or `{ status: "waiting" }` |
+| POST | `/rooms/{room}/admit/{user}`, `/deny/{user}` | host / co-host. The waiting person is told on their `private-user` channel and then calls `join` again |
+| POST | `/rooms/{room}/lock`, `/unlock`, `/end` | host only. `end` closes the LiveKit room and disconnects everyone |
+| POST | `/rooms/{room}/participants/{user}/remove` | host / co-host (a co-host cannot remove the host or another co-host). The person is also blocked from rejoining |
+| POST | `/rooms/{room}/participants/{user}/mute` | `{ kind?: "audio" \| "video" }` (default audio). Muting only: people unmute themselves |
+| POST | `/rooms/{room}/co-hosts/{user}` | host only; the person must already be admitted. Their LiveKit admin rights apply from their next `join` |
+| POST | `/webhooks/livekit` | called by LiveKit, not by clients; 401 unless the request is signed with our LiveKit secret |
+
+Who can see / join a room: its host, anyone who has asked to join, and members of the linked chat. A room **not** linked to a chat can be joined by anyone who has its id (share the link); password and waiting room still apply.
+
+### Join errors
+
+| Status | `code` | Meaning |
+|---|---|---|
+| 422 | — | `errors.password`: missing or wrong password. The host, and anyone already admitted or waiting, are not asked again |
+| 403 | — | You are not invited to this room, or the host denied / removed you |
+| 409 | `room_ended` | The room is over |
+| 409 | `room_locked` | The host is not letting new people in (people already admitted can still reconnect) |
+| 409 | `room_full` | All seats are taken |
+| 503 | — | The video service (LiveKit) is unreachable; try again |
+| 429 | — | More than 20 join attempts a minute for this room |
+
+A seat is reserved for 120 seconds when a token is issued, so two people asking for the last seat cannot both get in. Reconnecting always works for someone who already holds a seat. The token lasts `LIVEKIT_TOKEN_TTL` seconds (default 3600); its identity is the user's UUID and its metadata is `{ "role", "avatar_url" }`. The host and co-hosts get LiveKit `roomAdmin`.
+
+### Real-time events
+
+Joining the presence channel `presence-room.{roomId}` (`Echo.join('room.' + id)`) is allowed for the host and admitted participants only, with member info `{ id, name, avatar_url }`. People waiting to be let in are **not** on it; what concerns them goes to their `private-user.{id}` channel.
+
+| Event | Channels | Payload |
+|---|---|---|
+| `room.participant_joined` | `presence-room.{id}` | `{ room_id, user, role }` — from LiveKit's webhook |
+| `room.participant_left` | `presence-room.{id}` | `{ room_id, user, role }` |
+| `room.join_requested` | `presence-room.{id}` + host's and co-hosts' `private-user` | `{ room_id, user }` — someone is waiting |
+| `room.admitted` / `room.denied` | the person's `private-user` only | `{ room: { id, name, type, status, host_id, chat_id, is_locked } }` — after `admitted`, call `join` again |
+| `room.role_changed` | `presence-room.{id}` | `{ room_id, user_id, role, host_id }` — a co-host was appointed, or the host role moved to `user_id` |
+| `room.ended` | `presence-room.{id}` | `{ room_id, ended_at }` |
+
+### Behaviour worth knowing
+
+- Live media state (camera/microphone on, connection quality, who is speaking) is **not** stored; read it from the LiveKit SDK.
+- The LiveKit room is created when the first person gets a token. If LiveKit closes that room without anyone ever having joined (for example a token was issued but nobody connected), our room is left as it was, so a scheduled meeting is not ended before it starts.
+- When everyone has left and `livekit_empty_timeout_seconds` (5 minutes) has passed, LiveKit closes the room and the webhook ends ours.
+- If the host leaves and others remain, the host role goes to the earliest-joined connected co-host, otherwise the earliest-joined connected participant.
+- A LiveKit token cannot be revoked. If a removed person reconnects with a token they still hold, the webhook handler puts them out again at once.
+- Recording is not implemented (`recording_enabled` is always `false`).
