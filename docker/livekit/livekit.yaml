@@ -1,0 +1,19 @@
+# LiveKit server config for LOCAL DEVELOPMENT.
+# The key/secret must match LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env.
+# For production (public IP, TLS, built-in TURN) see the README (Phase 6).
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+
+keys:
+  devkey: secret-secret-secret-secret-secret-secret
+
+# Webhooks are configured in Phase 4 once POST /api/v1/webhooks/livekit exists:
+# webhook:
+#   api_key: devkey
+#   urls:
+#     - http://host.docker.internal:8000/api/v1/webhooks/livekit

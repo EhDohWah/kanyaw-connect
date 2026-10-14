@@ -1,0 +1,47 @@
+# Local development infrastructure. Laravel, Reverb and the queue worker run on the host via artisan.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanyaw
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: kanyaw_connect
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanyaw -d kanyaw_connect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"          # HTTP / WebSocket signalling
+      - "7881:7881"          # WebRTC over TCP (fallback)
+      - "50000-50100:50000-50100/udp"   # WebRTC media (keep in sync with livekit.yaml)
+    volumes:
+      - ./docker/livekit/livekit.yaml:/etc/livekit.yaml:ro
+
+volumes:
+  postgres-data:
+  redis-data:
