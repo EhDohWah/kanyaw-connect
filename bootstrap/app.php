@@ -11,6 +11,11 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Channel authorization endpoint: POST /api/v1/broadcasting/auth, authenticated by Sanctum bearer token.
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'prefix' => 'api/v1',
+        'middleware' => ['auth:sanctum'],
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         //
     })

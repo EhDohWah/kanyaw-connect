@@ -5,9 +5,17 @@ namespace Database\Seeders;
 use App\Actions\Chats\CreateDirectChat;
 use App\Actions\Chats\CreateGroupChat;
 use App\Actions\Messages\SendMessage;
+use App\Events\ChatMemberAdded;
+use App\Events\ChatMemberRemoved;
+use App\Events\ChatUpdated;
+use App\Events\MessageDeleted;
+use App\Events\MessageRead;
+use App\Events\MessageSent;
+use App\Events\MessageUpdated;
 use App\Models\Chat;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
@@ -19,6 +27,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Seeding should not publish realtime events (no Reverb server or queue worker is needed).
+        Event::fake([
+            ChatMemberAdded::class, ChatMemberRemoved::class, ChatUpdated::class,
+            MessageDeleted::class, MessageRead::class, MessageSent::class, MessageUpdated::class,
+        ]);
+
         $users = collect(['Saw Eh Doh', 'Naw Paw Say', 'Saw Htoo Lay', 'Naw Mu Moo', 'Saw Kler Wah'])
             ->map(fn (string $name, int $i) => User::factory()->create([
                 'name' => $name,

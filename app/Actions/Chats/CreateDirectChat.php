@@ -6,11 +6,14 @@ use App\Enums\ChatRole;
 use App\Enums\ChatType;
 use App\Models\Chat;
 use App\Models\User;
+use App\Services\ChatBroadcaster;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class CreateDirectChat
 {
+    public function __construct(private ChatBroadcaster $broadcaster) {}
+
     /**
      * Find or create the direct chat between two users.
      *
@@ -57,6 +60,9 @@ class CreateDirectChat
 
             return [$existing, false];
         }
+
+        // The other person learns about the new chat on their user channel.
+        $this->broadcaster->memberAdded($chat, $other, toChat: false);
 
         return [$chat, true];
     }

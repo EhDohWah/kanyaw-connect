@@ -6,10 +6,13 @@ use App\Enums\ChatRole;
 use App\Models\Chat;
 use App\Models\ChatMember;
 use App\Models\User;
+use App\Services\ChatBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class RemoveChatMember
 {
+    public function __construct(private ChatBroadcaster $broadcaster) {}
+
     /**
      * Remove a user from a group (used both for "leave" and for an admin removing someone).
      *
@@ -18,7 +21,9 @@ class RemoveChatMember
      */
     public function handle(Chat $chat, User $user): void
     {
-        DB::transaction(function () use ($chat, $user) {
+        $removed = false;
+
+        DB::transaction(function () use ($chat, $user, &$removed) {
             $locked = Chat::whereKey($chat->getKey())->lockForUpdate()->firstOrFail();
 
             $membership = $locked->chatMembers()->where('user_id', $user->getKey())->first();
@@ -28,6 +33,7 @@ class RemoveChatMember
             }
 
             $membership->delete();
+            $removed = true;
 
             if ($membership->role === ChatRole::Owner) {
                 $this->promoteSuccessor($locked);
@@ -40,6 +46,10 @@ class RemoveChatMember
                 $locked->delete();
             }
         });
+
+        if ($removed) {
+            $this->broadcaster->memberRemoved($chat, $user->getKey());
+        }
     }
 
     private function promoteSuccessor(Chat $chat): void

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ChatMemberController;
 use App\Http\Controllers\Api\V1\ChatReadController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
+use App\Http\Controllers\Api\V1\PresenceController;
 use Illuminate\Support\Facades\Route;
 
 // All routes below are served under /api/v1 (the /api prefix comes from bootstrap/app.php).
@@ -28,6 +29,8 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::post('me/avatar', [MeController::class, 'avatar']);
+        Route::post('me/heartbeat', [PresenceController::class, 'heartbeat'])->middleware('throttle:heartbeat');
+        Route::get('users/presence', [PresenceController::class, 'index']);
 
         Route::get('chats', [ChatController::class, 'index']);
         Route::post('chats/direct', [ChatController::class, 'storeDirect']);

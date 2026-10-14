@@ -4,11 +4,15 @@ namespace App\Actions\Chats;
 
 use App\Enums\ChatRole;
 use App\Models\Chat;
+use App\Models\User;
+use App\Services\ChatBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AddChatMembers
 {
+    public function __construct(private ChatBroadcaster $broadcaster) {}
+
     /**
      * Add users to a group. Users who are already members are skipped, so the call is idempotent.
      *
@@ -21,7 +25,9 @@ class AddChatMembers
      */
     public function handle(Chat $chat, array $userIds): Chat
     {
-        return DB::transaction(function () use ($chat, $userIds) {
+        $added = [];
+
+        $chat = DB::transaction(function () use ($chat, $userIds, &$added) {
             // Serialise membership changes so the limit and member_count cannot race.
             $locked = Chat::whereKey($chat->getKey())->lockForUpdate()->firstOrFail();
 
@@ -35,6 +41,7 @@ class AddChatMembers
             }
 
             $now = now();
+            $added = $toAdd;
 
             foreach ($toAdd as $userId) {
                 $locked->chatMembers()->create([
@@ -49,5 +56,13 @@ class AddChatMembers
 
             return $locked;
         });
+
+        if ($added !== []) {
+            foreach (User::whereIn('id', $added)->get() as $user) {
+                $this->broadcaster->memberAdded($chat, $user);
+            }
+        }
+
+        return $chat;
     }
 }

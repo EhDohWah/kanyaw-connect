@@ -7,6 +7,7 @@ use App\Models\Attachment;
 use App\Models\Chat;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\ChatBroadcaster;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -14,6 +15,8 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class SendMessage
 {
+    public function __construct(private ChatBroadcaster $broadcaster) {}
+
     /**
      * Send a message. Idempotent on (sender, client_id): a retry returns the original message.
      *
@@ -41,6 +44,8 @@ class SendMessage
 
             return [$this->assertSameChat($existing, $chat), false];
         }
+
+        $this->broadcaster->messageSent($message);
 
         return [$message, true];
     }

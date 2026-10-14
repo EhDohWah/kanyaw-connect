@@ -37,7 +37,7 @@ class MessageController extends Controller
     {
         [$message, $created] = $action->handle($chat, $request->user(), $request->validated());
 
-        return (new MessageResource($message->load(self::RELATIONS)))
+        return (new MessageResource($message->loadMissing(self::RELATIONS)))
             ->response()
             ->setStatusCode($created ? 201 : 200);
     }
@@ -46,7 +46,7 @@ class MessageController extends Controller
     {
         $action->handle($message, $request->validated('content'));
 
-        return new MessageResource($message->load(self::RELATIONS));
+        return new MessageResource($message->loadMissing(self::RELATIONS));
     }
 
     public function destroy(Message $message, DeleteMessage $action): Response

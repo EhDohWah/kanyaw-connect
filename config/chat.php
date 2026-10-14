@@ -29,4 +29,13 @@ return [
         'thumbnail_size' => 400,
     ],
 
+    /*
+    | Presence: a client heartbeat keeps a cache key alive for this many seconds. When the key is
+    | gone (no heartbeat for that long) the user counts as offline.
+    */
+    'presence' => [
+        'ttl_seconds' => 90,
+        'max_lookup' => 100,
+    ],
+
 ];

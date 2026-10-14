@@ -6,16 +6,19 @@ use App\Enums\ChatRole;
 use App\Enums\ChatType;
 use App\Models\Chat;
 use App\Models\User;
+use App\Services\ChatBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class CreateGroupChat
 {
+    public function __construct(private ChatBroadcaster $broadcaster) {}
+
     /**
      * @param  array{name: string, description?: string|null, member_ids: list<string>}  $data
      */
     public function handle(User $creator, array $data): Chat
     {
-        return DB::transaction(function () use ($creator, $data) {
+        $chat = DB::transaction(function () use ($creator, $data) {
             $now = now();
             $memberIds = array_values(array_unique($data['member_ids']));
 
@@ -46,5 +49,12 @@ class CreateGroupChat
 
             return $chat;
         });
+
+        // Everyone but the creator learns about the new chat on their user channel.
+        foreach (User::whereIn('id', $data['member_ids'])->get() as $member) {
+            $this->broadcaster->memberAdded($chat, $member, toChat: false);
+        }
+
+        return $chat;
     }
 }

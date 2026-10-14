@@ -36,6 +36,9 @@ class AppServiceProvider extends ServiceProvider
             Str::lower((string) $request->input('email')).'|'.$request->ip()
         ));
 
+        // Clients ping every 30-60 s; this leaves room for a few devices per user.
+        RateLimiter::for('heartbeat', fn (Request $request) => Limit::perMinute(12)->by($request->user()?->id ?: $request->ip()));
+
         // 30 messages per minute per user, across all chats.
         RateLimiter::for('messages', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
     }
