@@ -13,7 +13,7 @@ class AttachmentController extends Controller
 {
     public function store(StoreAttachmentRequest $request, Chat $chat, StoreAttachment $action): JsonResponse
     {
-        $attachment = $action->handle($chat, $request->user(), $request->file('file'));
+        $attachment = $action->handle($chat, $request->user(), $request->file('file'), $request->validated('encrypted_key'));
 
         return (new AttachmentResource($attachment))->response()->setStatusCode(201);
     }

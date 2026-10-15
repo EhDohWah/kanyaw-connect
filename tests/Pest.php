@@ -17,6 +17,7 @@ use App\Events\RoomParticipantLeft;
 use App\Events\RoomRoleChanged;
 use App\Models\Chat;
 use App\Models\ChatMember;
+use App\Models\Device;
 use App\Models\Message;
 use App\Models\Room;
 use App\Models\RoomParticipant;
@@ -36,6 +37,10 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
+
+// Integration tests use real, separate database connections (they cannot run inside the
+// transaction RefreshDatabase wraps around each test), so they manage and clean up their own data.
+pest()->extend(TestCase::class)->in('Integration');
 
 /** Authenticate as the given user (or a new one) for the following requests. */
 function signIn(?User $user = null): User
@@ -230,4 +235,59 @@ function livekitEvent(Room $room, string $name, ?User $user = null, array $extra
         'event' => $name,
         'room' => ['sid' => 'RM_test', 'name' => $room->livekit_room_name],
     ], $user ? ['participant' => ['sid' => 'PA_'.substr($user->id, 0, 8), 'identity' => $user->id]] : [], $extra);
+}
+
+/** A device for a user, with real libsodium public keys. Pass a prekey count to also create one-time prekeys. */
+function makeDevice(?User $user = null, int $prekeys = 0, array $attributes = []): Device
+{
+    $factory = Device::factory();
+
+    return ($prekeys > 0 ? $factory->withPrekeys($prekeys) : $factory)
+        ->create(array_merge(['user_id' => ($user ?? User::factory()->create())->id], $attributes));
+}
+
+/** An end-to-end encrypted group / direct chat (the chat row only; members as in makeGroup / makeDirect). */
+function makeEncryptedGroup(User $owner, array $members = [], array $admins = []): Chat
+{
+    return makeGroup($owner, $members, $admins, ['is_encrypted' => true]);
+}
+
+function makeEncryptedDirect(User $a, User $b): Chat
+{
+    $chat = makeDirect($a, $b, ['is_encrypted' => true]);
+    $chat->update(['direct_key' => Chat::directKeyFor($a->id, $b->id, true)]);
+
+    return $chat;
+}
+
+/**
+ * Envelopes for the given devices, in the shape clients send. The "ciphertext" is random bytes: the
+ * server must treat it as opaque, so tests do not need real encryption here.
+ *
+ * @param  iterable<Device>  $devices
+ * @return list<array{recipient_device_id: string, ciphertext: string, header: array<string, mixed>}>
+ */
+function envelopesFor(iterable $devices): array
+{
+    $envelopes = [];
+
+    foreach ($devices as $device) {
+        $envelopes[] = [
+            'recipient_device_id' => $device->id,
+            'ciphertext' => base64_encode(random_bytes(48)),
+            'header' => ['alg' => 'test-x25519-xsalsa20poly1305', 'nonce' => base64_encode(random_bytes(24)), 'ephemeral_key' => base64_encode(random_bytes(32)), 'prekey_id' => 7],
+        ];
+    }
+
+    return $envelopes;
+}
+
+/** Send an encrypted message from a device. */
+function sendEncrypted($test, Chat $chat, Device $from, array $envelopes, array $overrides = [], ?string $deviceHeader = null)
+{
+    return $test->withHeader('X-Device-Id', $deviceHeader ?? $from->id)->postJson("/api/v1/chats/{$chat->id}/messages", array_merge([
+        'client_id' => (string) Str::uuid(),
+        'type' => 'text',
+        'envelopes' => $envelopes,
+    ], $overrides));
 }

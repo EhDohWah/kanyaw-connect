@@ -50,6 +50,19 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by(($request->user()?->id ?: $request->ip()).'|'.$roomId);
         });
 
+        // Registering a device is rare. Together with the per-user device cap this bounds how much
+        // key material one account can park on the server.
+        RateLimiter::for('devices', fn (Request $request) => Limit::perHour(20)->by($request->user()?->id ?: $request->ip()));
+
+        // Every key-bundle fetch uses up one-time prekeys, so it is limited per requester per target
+        // to stop anyone draining a person's prekeys. Runs before route-model binding: the user is an id.
+        RateLimiter::for('key-bundles', function (Request $request) {
+            $target = $request->route('user');
+            $targetId = $target instanceof Model ? $target->getKey() : $target;
+
+            return Limit::perMinute(10)->by(($request->user()?->id ?: $request->ip()).'|'.$targetId);
+        });
+
         // 30 messages per minute per user, across all chats.
         RateLimiter::for('messages', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
     }

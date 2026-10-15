@@ -31,6 +31,12 @@ class MessageResource extends JsonResource
             'is_edited' => $this->is_edited,
             'edited_at' => $this->edited_at,
             'metadata' => (object) ($this->metadata ?? []),
+            // True for messages in encrypted chats: `content` is then always null and the text is in `envelope`.
+            'encrypted' => $this->isEncrypted(),
+            // The calling device's own encrypted copy (needs the X-Device-Id header). Null when this
+            // device has none: it was added after the message was sent, or it sent the message itself.
+            // Absent from broadcasts and from requests that name no device. Never another device's copy.
+            'envelope' => $this->whenLoaded('envelopes', fn () => ($envelope = $this->envelopes->first()) ? new EnvelopeResource($envelope) : null),
             'attachment' => $this->whenLoaded('attachment', fn () => $this->attachment ? new AttachmentResource($this->attachment) : null),
             'created_at' => $this->created_at,
         ];

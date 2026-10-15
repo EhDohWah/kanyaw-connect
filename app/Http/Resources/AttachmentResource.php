@@ -25,6 +25,8 @@ class AttachmentResource extends JsonResource
             'url' => $this->fileUrl(),
             // Null until the queued thumbnail job has run (and always null for non-images).
             'thumbnail_url' => $this->thumbnailUrl(),
+            // Opaque data the uploader attached (encrypted chats only).
+            'encrypted_key' => $this->when($this->encrypted_key !== null, $this->encrypted_key),
             'created_at' => $this->created_at,
         ];
     }

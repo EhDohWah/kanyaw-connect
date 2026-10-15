@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ChatMemberController;
 use App\Http\Controllers\Api\V1\ChatReadController;
+use App\Http\Controllers\Api\V1\DeviceController;
+use App\Http\Controllers\Api\V1\KeyBundleController;
 use App\Http\Controllers\Api\V1\LiveKitWebhookController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
@@ -60,6 +62,16 @@ Route::prefix('v1')->group(function () {
             Route::post('attachments', [AttachmentController::class, 'store']);
         });
 
+        // End-to-end encryption: the server is a key directory. Only public keys are ever sent here.
+        Route::get('devices', [DeviceController::class, 'index']);
+        Route::post('devices', [DeviceController::class, 'store'])->middleware('throttle:devices');
+        Route::delete('devices/{device}', [DeviceController::class, 'destroy'])->middleware('can:manage,device');
+        Route::put('devices/{device}/signed-prekey', [DeviceController::class, 'rotateSignedPrekey'])->middleware('can:manage,device');
+        Route::post('devices/{device}/prekeys', [DeviceController::class, 'uploadPrekeys'])->middleware('can:manage,device');
+        Route::get('devices/{device}/prekeys/count', [DeviceController::class, 'prekeyCount'])->middleware('can:manage,device');
+        Route::get('users/{user}/key-bundles', [KeyBundleController::class, 'index'])
+            ->middleware(['throttle:key-bundles', 'can:fetchKeyBundles,user']);
+
         Route::get('rooms', [RoomController::class, 'index']);
         Route::post('rooms', [RoomController::class, 'store']);
 
@@ -80,6 +92,7 @@ Route::prefix('v1')->group(function () {
             Route::post('co-hosts/{user}', [RoomParticipantController::class, 'coHost'])->middleware('can:appointCoHost,room,user');
         });
 
+        Route::get('messages/{message}', [MessageController::class, 'show'])->middleware('can:view,message');
         Route::patch('messages/{message}', [MessageController::class, 'update'])->middleware('can:update,message');
         Route::delete('messages/{message}', [MessageController::class, 'destroy'])->middleware('can:delete,message');
     });

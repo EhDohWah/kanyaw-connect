@@ -19,22 +19,23 @@ class CreateDirectChat
      *
      * @return array{0: Chat, 1: bool} the chat, and whether it was just created
      */
-    public function handle(User $creator, User $other): array
+    public function handle(User $creator, User $other, bool $encrypted = false): array
     {
-        $key = Chat::directKeyFor($creator->getKey(), $other->getKey());
+        $key = Chat::directKeyFor($creator->getKey(), $other->getKey(), $encrypted);
 
         if ($existing = Chat::where('direct_key', $key)->first()) {
             return [$existing, false];
         }
 
         try {
-            $chat = DB::transaction(function () use ($creator, $other, $key) {
+            $chat = DB::transaction(function () use ($creator, $other, $key, $encrypted) {
                 $now = now();
 
                 $chat = Chat::create([
                     'type' => ChatType::Direct,
                     'created_by' => $creator->getKey(),
                     'direct_key' => $key,
+                    'is_encrypted' => $encrypted,
                     'member_count' => 2,
                     'last_message_at' => $now,
                 ]);

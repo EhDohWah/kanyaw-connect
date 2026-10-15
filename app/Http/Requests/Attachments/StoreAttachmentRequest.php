@@ -18,6 +18,8 @@ class StoreAttachmentRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'max:'.config('chat.attachments.max_kilobytes')],
+            // Opaque, client-defined data for encrypted chats (e.g. a wrapped file key). Not interpreted.
+            'encrypted_key' => $this->route('chat')->is_encrypted ? ['nullable', 'string', 'max:4096'] : ['prohibited'],
         ];
     }
 }

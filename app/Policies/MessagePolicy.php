@@ -9,6 +9,12 @@ use Illuminate\Auth\Access\Response;
 
 class MessagePolicy
 {
+    /** Members of the chat can read its messages. */
+    public function view(User $user, Message $message): bool
+    {
+        return $message->chat?->membershipOf($user) !== null;
+    }
+
     /** Senders can edit their own messages for a limited time. */
     public function update(User $user, Message $message): Response
     {
@@ -23,6 +29,11 @@ class MessagePolicy
 
         if (! $message->chat->membershipOf($user)) {
             return Response::deny();
+        }
+
+        // An edit would have to replace every device's encrypted copy, which the server cannot do.
+        if ($message->isEncrypted()) {
+            return Response::deny('Encrypted messages cannot be edited. Send a new message instead.');
         }
 
         if (! $message->isWithinEditWindow()) {

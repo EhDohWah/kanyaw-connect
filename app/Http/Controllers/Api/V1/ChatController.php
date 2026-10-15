@@ -14,6 +14,7 @@ use App\Http\Resources\ChatResource;
 use App\Models\Chat;
 use App\Models\User;
 use App\Services\ChatListService;
+use App\Services\DeviceResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -21,21 +22,21 @@ use Illuminate\Http\Response;
 
 class ChatController extends Controller
 {
-    public function __construct(private ChatListService $chats) {}
+    public function __construct(private ChatListService $chats, private DeviceResolver $devices) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        return ChatResource::collection($this->chats->paginate($request->user(), $this->perPage($request)));
+        return ChatResource::collection($this->chats->paginate($request->user(), $this->perPage($request), $this->devices->optional($request)));
     }
 
     public function show(Request $request, Chat $chat): ChatResource
     {
-        return new ChatResource($this->chats->find($request->user(), $chat));
+        return new ChatResource($this->chats->find($request->user(), $chat, $this->devices->optional($request)));
     }
 
     public function storeDirect(StoreDirectChatRequest $request, CreateDirectChat $action): JsonResponse
     {
-        [$chat, $created] = $action->handle($request->user(), User::findOrFail($request->validated('user_id')));
+        [$chat, $created] = $action->handle($request->user(), User::findOrFail($request->validated('user_id')), $request->boolean('is_encrypted'));
 
         return (new ChatResource($this->chats->find($request->user(), $chat)))
             ->response()

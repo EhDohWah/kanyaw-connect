@@ -23,6 +23,8 @@ class StoreDirectChatRequest extends FormRequest
                 Rule::notIn([$this->user()->id]),
                 Rule::exists('users', 'id')->whereNull('deleted_at'),
             ],
+            // End-to-end encrypted chat. Fixed for the life of the chat.
+            'is_encrypted' => ['nullable', 'boolean'],
         ];
     }
 

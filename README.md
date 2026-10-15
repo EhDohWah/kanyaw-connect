@@ -1,7 +1,7 @@
 # Karen Connect — Backend API
 
 Laravel API for a private chat + video platform. See the build spec for the phase plan.
-**Status: Phase 4 (video rooms with LiveKit) complete.** The full README (deployment, Reverb, LiveKit/TURN) is written in Phase 6.
+**Status: Phase 5 (end-to-end encryption support) complete.** The full README (deployment, Reverb, LiveKit/TURN) is written in Phase 6.
 
 ## Local setup
 
@@ -190,3 +190,103 @@ Joining the presence channel `presence-room.{roomId}` (`Echo.join('room.' + id)`
 - If the host leaves and others remain, the host role goes to the earliest-joined connected co-host, otherwise the earliest-joined connected participant.
 - A LiveKit token cannot be revoked. If a removed person reconnects with a token they still hold, the webhook handler puts them out again at once.
 - Recording is not implemented (`recording_enabled` is always `false`).
+
+## End-to-end encryption (Phase 5)
+
+In an encrypted chat the server is only a **key directory** and a **ciphertext relay**. All encryption and decryption happens in the clients. The server stores public keys and opaque encrypted blobs, and it never receives a private key or any plaintext. (A test scans the source to make sure no code decrypts or reads ciphertext, and a live check confirmed the plaintext appears nowhere in a full database dump.)
+
+**What the server can still see** (this is metadata, not content): who is in which chat, who sent a message and from which device, when, how big the envelopes are, a message's type (text / image / voice / file) and attachment ids, and reply links. Say so honestly in the app's privacy text.
+
+> **For the frontend.** Use a vetted protocol, not home-made crypto. As a minimum, libsodium `crypto_box` / sealed boxes; ideally a Double Ratchet library (Signal-style). Ed25519 *signing* keys and X25519 *exchange* keys are two separate key pairs: never derive one from the other.
+
+### Keys the server stores (public only; standard padded base64)
+
+| Key | Size | Notes |
+|---|---|---|
+| `identity_public_key` | 32 bytes | Ed25519. Unique across all devices |
+| `exchange_public_key` | 32 bytes | X25519 |
+| `signed_prekey.public_key` | 32 bytes | X25519, with an integer `id` |
+| `signed_prekey.signature` | 64 bytes | Ed25519 signature by the identity key over the **raw 32 bytes** of the signed prekey's public key. The server verifies it (`E2EE_VERIFY_SIGNED_PREKEY=false` turns that off) |
+| one-time prekeys | 32 bytes each | X25519, each with an integer `id`; ids and public keys must be unique |
+
+Integer ids go up to 2,147,483,647. A user can have at most 10 active devices (`config/e2ee.php`) because every message needs one envelope per device.
+
+### Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/devices` | `{ name, identity_public_key, exchange_public_key, signed_prekey: {id, public_key, signature}, one_time_prekeys: [{id, public_key}] }` (20–100 prekeys) → 201. Extra fields (such as a private key) are rejected. 20 per hour |
+| GET | `/devices` | my active devices, with `unclaimed_prekeys` |
+| DELETE | `/devices/{device}` | revoke: it stops appearing in bundles, can no longer read, senders must stop encrypting for it, its unclaimed prekeys are deleted |
+| PUT | `/devices/{device}/signed-prekey` | `{ id, public_key, signature }`; the id must be new, the signature is verified against the device's identity key |
+| POST | `/devices/{device}/prekeys` | `{ prekeys: [{id, public_key}] }` top-up, 1–100 at a time, at most 200 unclaimed per device; ids are never reused |
+| GET | `/devices/{device}/prekeys/count` | `{ data: { unclaimed } }`: poll this and top up when it runs low |
+| GET | `/users/{user}/key-bundles` | a bundle for each active device, **claiming one one-time prekey per device**. Only for yourself or someone you share a chat with (else 404). 10 per minute per target. Optional `?device_ids[]=` to claim only for those devices, and the `X-Device-Id` header (see below) |
+| GET | `/messages/{message}` | one message (needed because a `message.sent` broadcast carries no envelope) |
+
+Other people's devices (and revoked ones) answer **404** on the `/devices/{device}` routes.
+
+A **key bundle** is `{ device_id, user_id, identity_public_key, exchange_public_key, signed_prekey: {id, public_key, signature}, one_time_prekey: {id, public_key} | null }`. `one_time_prekey` is `null` when the device has run out; start the session with the signed prekey alone. Bundles never include a device name.
+
+Each prekey is handed out **at most once**: claims use `SELECT … FOR UPDATE SKIP LOCKED`, so even simultaneous requests get different prekeys. This is verified with real parallel processes and with 28 simultaneous HTTP requests.
+
+### The `X-Device-Id` header
+
+Tell the server which of **your** devices a request comes from. It is checked against the logged-in user and rejected with **403** if it is not one of their active devices. Required to send and to read in an encrypted chat (missing → 422); optional on `GET /chats`, `GET /chats/{chat}` and `key-bundles`. A device id is not a secret, so never rely on it alone: the user's bearer token is still required. (Add it to your CORS allowed headers.)
+
+### Creating an encrypted chat
+
+`POST /chats/direct` and `POST /chats/group` accept `is_encrypted: true`. It is fixed for the life of the chat: a chat cannot be converted either way. Two people can have a plaintext and an encrypted direct chat side by side.
+
+### Sending an encrypted message
+
+1. Register the device (once). Keep every private key on the device.
+2. Create or open the encrypted chat.
+3. `GET /users/{user}/key-bundles` for each member who has devices you have no session with yet. Include your **own** other devices (`GET /users/{me}/key-bundles` skips the device named in `X-Device-Id`).
+4. Encrypt the message once **per recipient device**.
+5. `POST /chats/{chat}/messages` with `X-Device-Id: <your device>`:
+
+```json
+{
+  "client_id": "…uuid…",
+  "type": "text",
+  "envelopes": [
+    { "recipient_device_id": "…", "ciphertext": "…base64…", "header": { "alg": "…", "nonce": "…", "ephemeral_key": "…", "prekey_id": 7 } }
+  ]
+}
+```
+
+Rules:
+- `content` must be empty. Plaintext is rejected with 422. The text (and an image caption) goes inside the ciphertext.
+- There must be an envelope for **every active device of every member, including your own other devices**, except the sending device (it may include one for itself, but need not).
+- `ciphertext` and `header` are opaque to the server and stored exactly as sent. Limits: ciphertext 32,768 characters (text, no NUL bytes; send base64), header a non-empty object up to 4,096 bytes, at most 1,000 envelopes.
+- Sizes and replies work as in plaintext chats (`client_id` idempotency, `reply_to_id`, media with `metadata.attachment_id`, 30 messages per minute).
+
+If the envelopes do not match, you get **409** and nothing is stored:
+
+```json
+{ "message": "…", "code": "envelope_mismatch", "missing_device_ids": ["…"], "unexpected_device_ids": ["…"] }
+```
+
+Fetch `key-bundles?device_ids[]=…` for the missing devices, add their envelopes, drop the unexpected ones (revoked, or no longer in the chat), and send again with the same `client_id`. `409 no_recipient_devices` means nobody else in the chat has registered a device yet.
+
+### Reading
+
+`GET /chats/{chat}/messages` (and `GET /messages/{id}`) in an encrypted chat need `X-Device-Id`. Each message has `content: null`, `encrypted: true`, `metadata.sender_device_id` and `envelope`: **only your device's own** `{ recipient_device_id, ciphertext, header }`, never another device's. `envelope` is `null` if your device cannot read that message: it sent it itself, or it was added after the message was sent (new devices cannot read old history). Without a device header on `GET /chats`, `latest_message.envelope` is left out; with one it is included so the list can show previews.
+
+Real-time `message.sent` events for encrypted messages carry **no envelope and no ciphertext**: fetch the message with `GET /messages/{id}` and your `X-Device-Id`.
+
+### Device events
+
+`device.added` and `device.revoked` go to `private-user.{id}` of the device owner (their other devices) and of everyone who shares an **encrypted** chat with them. The payload is just `{ user_id, device_id }`: on `device.added`, fetch that user's bundles and re-key; on `device.revoked`, forget the device.
+
+### What does not work in encrypted chats
+
+- **Editing** is refused (the server cannot re-encrypt for every device). Delete and send a new message. Deleting removes the envelopes at once.
+- **Attachments** are opaque encrypted blobs: no thumbnail, no type check, the file name is not stored (keep the real name and type inside the message) and downloads are always forced to download. An optional opaque `encrypted_key` (max 4,096 characters) can be sent with the upload and is returned untouched.
+- The server cannot make **search, previews or push text** from content. Push notifications for these chats will only say "New message" (Phase 6).
+- Members added later cannot read earlier messages.
+
+### Setup notes
+
+PHP needs `ext-sodium` (only to verify the signed prekey; it is part of PHP's core) alongside `ext-bcmath`. A client message is never trimmed or rewritten: Laravel's whitespace trimming and empty-string-to-null conversion are switched off for everything under `envelopes`.

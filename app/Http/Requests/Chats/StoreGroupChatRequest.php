@@ -20,6 +20,8 @@ class StoreGroupChatRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:1000'],
+            // End-to-end encrypted chat. Fixed for the life of the chat.
+            'is_encrypted' => ['nullable', 'boolean'],
             // The creator is added automatically as owner, so they must not list themselves.
             'member_ids' => ['required', 'array', 'min:1', 'max:'.(config('chat.max_group_members') - 1)],
             'member_ids.*' => [

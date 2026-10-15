@@ -47,13 +47,17 @@ class Chat extends Model
         ];
     }
 
-    /** The same two users always produce the same key, whatever order they are given in. */
-    public static function directKeyFor(string $userA, string $userB): string
+    /**
+     * The same two users always produce the same key, whatever order they are given in. An
+     * encrypted direct chat gets its own key, so two people can have a plaintext and an encrypted
+     * direct chat side by side (a chat can never change from one to the other).
+     */
+    public static function directKeyFor(string $userA, string $userB, bool $encrypted = false): string
     {
         $ids = [$userA, $userB];
         sort($ids);
 
-        return implode(':', $ids);
+        return implode(':', $ids).($encrypted ? ':e' : '');
     }
 
     public function isDirect(): bool

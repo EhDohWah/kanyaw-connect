@@ -14,7 +14,7 @@ class CreateGroupChat
     public function __construct(private ChatBroadcaster $broadcaster) {}
 
     /**
-     * @param  array{name: string, description?: string|null, member_ids: list<string>}  $data
+     * @param  array{name: string, description?: string|null, is_encrypted?: bool, member_ids: list<string>}  $data
      */
     public function handle(User $creator, array $data): Chat
     {
@@ -27,6 +27,7 @@ class CreateGroupChat
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
                 'created_by' => $creator->getKey(),
+                'is_encrypted' => $data['is_encrypted'] ?? false,
                 'member_count' => count($memberIds) + 1,
                 'last_message_at' => $now,
             ]);

@@ -65,6 +65,11 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function devices(): HasMany
+    {
+        return $this->hasMany(Device::class);
+    }
+
     public function sentMessages(): HasMany
     {
         return $this->hasMany(Message::class, 'sender_id');

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d83ca085920905ea60ed65520ebc6a9a",
+    "content-hash": "3476d37997d6349b7c44600a1fbb137f",
     "packages": [
         {
             "name": "agence104/livekit-server-sdk",
@@ -11159,7 +11159,8 @@
     "prefer-lowest": false,
     "platform": {
         "php": "^8.3",
-        "ext-bcmath": "*"
+        "ext-bcmath": "*",
+        "ext-sodium": "*"
     },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -53,6 +54,21 @@ class Message extends Model
     public function replyTo(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reply_to_id')->withTrashed();
+    }
+
+    /** The encrypted copies of this message, one per recipient device (encrypted chats only). */
+    public function envelopes(): HasMany
+    {
+        return $this->hasMany(MessageEnvelope::class);
+    }
+
+    /**
+     * Messages in encrypted chats record which device sent them. That, not the absence of content,
+     * is what marks a message as encrypted.
+     */
+    public function isEncrypted(): bool
+    {
+        return isset($this->metadata['sender_device_id']);
     }
 
     public function attachment(): HasOne
