@@ -31,6 +31,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $result['token'],
+            'expires_at' => $result['expires_at']?->toJSON(), // same format as every other timestamp
             'user' => (new UserResource($result['user']))->resolve($request),
         ]);
     }

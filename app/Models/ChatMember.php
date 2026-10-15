@@ -6,6 +6,7 @@ use App\Enums\ChatRole;
 use App\Models\Concerns\HasMicrosecondTimestamps;
 use Database\Factories\ChatMemberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -40,6 +41,19 @@ class ChatMember extends Model
             'is_archived' => 'boolean',
             'pin_position' => 'integer',
         ];
+    }
+
+    /**
+     * Members who have not muted the chat. A mute with an end time lapses once that time has passed;
+     * without one it lasts until the member undoes it.
+     */
+    public function scopeNotMuted(Builder $query): void
+    {
+        $query->where(fn (Builder $q) => $q
+            ->where('chat_members.is_muted', false)
+            ->orWhere(fn (Builder $lapsed) => $lapsed
+                ->whereNotNull('chat_members.muted_until')
+                ->where('chat_members.muted_until', '<=', self::microseconds(now()))));
     }
 
     /** Owners and admins can manage the group. */

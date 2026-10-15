@@ -12,6 +12,7 @@ use App\Http\Resources\RoomParticipantResource;
 use App\Models\Room;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
@@ -19,32 +20,32 @@ use Illuminate\Http\Response;
  */
 class RoomParticipantController extends Controller
 {
-    public function admit(Room $room, User $user, ReviewJoinRequest $action): RoomParticipantResource
+    public function admit(Request $request, Room $room, User $user, ReviewJoinRequest $action): RoomParticipantResource
     {
-        return new RoomParticipantResource($action->admit($room, $user)->load('user'));
+        return new RoomParticipantResource($action->admit($room, $user, $request->user())->load('user'));
     }
 
-    public function deny(Room $room, User $user, ReviewJoinRequest $action): RoomParticipantResource
+    public function deny(Request $request, Room $room, User $user, ReviewJoinRequest $action): RoomParticipantResource
     {
-        return new RoomParticipantResource($action->deny($room, $user)->load('user'));
+        return new RoomParticipantResource($action->deny($room, $user, $request->user())->load('user'));
     }
 
-    public function remove(Room $room, User $user, RemoveRoomParticipant $action): Response
+    public function remove(Request $request, Room $room, User $user, RemoveRoomParticipant $action): Response
     {
-        $action->handle($room, $user);
+        $action->handle($room, $user, $request->user());
 
         return response()->noContent();
     }
 
     public function mute(MuteParticipantRequest $request, Room $room, User $user, MuteRoomParticipant $action): JsonResponse
     {
-        $muted = $action->handle($room, $user, $request->validated('kind') ?? 'audio');
+        $muted = $action->handle($room, $user, $request->user(), $request->validated('kind') ?? 'audio');
 
         return response()->json(['data' => ['muted_tracks' => $muted]]);
     }
 
-    public function coHost(Room $room, User $user, PromoteCoHost $action): RoomParticipantResource
+    public function coHost(Request $request, Room $room, User $user, PromoteCoHost $action): RoomParticipantResource
     {
-        return new RoomParticipantResource($action->handle($room, $user)->load('user'));
+        return new RoomParticipantResource($action->handle($room, $user, $request->user())->load('user'));
     }
 }

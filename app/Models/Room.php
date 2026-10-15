@@ -78,6 +78,11 @@ class Room extends Model
         return $this->hasMany(RoomParticipant::class);
     }
 
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(RoomAuditLog::class);
+    }
+
     /** People waiting to be let in. */
     public function waitingParticipants(): HasMany
     {

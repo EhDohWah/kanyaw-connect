@@ -2,20 +2,23 @@
 
 namespace App\Actions\Rooms;
 
+use App\Actions\Push\NotifyMessageRecipients;
 use App\Enums\MessageType;
 use App\Enums\RoomAdmission;
+use App\Enums\RoomAuditAction;
 use App\Enums\RoomRole;
 use App\Enums\RoomType;
 use App\Models\Message;
 use App\Models\Room;
 use App\Models\User;
 use App\Services\ChatBroadcaster;
+use App\Services\RoomAuditor;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CreateRoom
 {
-    public function __construct(private ChatBroadcaster $chatBroadcaster) {}
+    public function __construct(private ChatBroadcaster $chatBroadcaster, private NotifyMessageRecipients $notifier, private RoomAuditor $auditor) {}
 
     /**
      * Create a room with the creator as host. If it is linked to a chat, every member of that chat
@@ -53,6 +56,14 @@ class CreateRoom
                 'admission' => RoomAdmission::Admitted,
             ]);
 
+            $this->auditor->record($room, RoomAuditAction::Created, $host, null, [
+                'type' => $room->type->value,
+                'chat_id' => $room->chat_id,
+                'waiting_room' => $room->waiting_room_enabled,
+                'password_protected' => $room->hasPassword(),
+                'max_participants' => $room->max_participants,
+            ]);
+
             if ($room->chat_id) {
                 $announcement = $this->announce($room, $host);
             }
@@ -62,6 +73,7 @@ class CreateRoom
 
         if ($announcement) {
             $this->chatBroadcaster->messageSent($announcement);
+            $this->notifier->handle($announcement, $host->getKey()); // the host started it; the others should know
         }
 
         return $room;

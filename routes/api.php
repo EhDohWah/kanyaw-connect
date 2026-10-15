@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\V1\LiveKitWebhookController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
 use App\Http\Controllers\Api\V1\PresenceController;
+use App\Http\Controllers\Api\V1\PushSubscriptionController;
+use App\Http\Controllers\Api\V1\RoomAuditLogController;
 use App\Http\Controllers\Api\V1\RoomController;
 use App\Http\Controllers\Api\V1\RoomLifecycleController;
 use App\Http\Controllers\Api\V1\RoomParticipantController;
@@ -20,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 // All routes below are served under /api/v1 (the /api prefix comes from bootstrap/app.php).
 Route::prefix('v1')->group(function () {
     Route::prefix('auth')->group(function () {
-        Route::post('register', [AuthController::class, 'register']);
+        Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
         Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
         Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
     });
@@ -34,7 +36,7 @@ Route::prefix('v1')->group(function () {
     // Called by the LiveKit server, not by clients: authorised by the signature on the request.
     Route::post('webhooks/livekit', LiveKitWebhookController::class);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:api-general'])->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::post('me/avatar', [MeController::class, 'avatar']);
@@ -72,6 +74,12 @@ Route::prefix('v1')->group(function () {
         Route::get('users/{user}/key-bundles', [KeyBundleController::class, 'index'])
             ->middleware(['throttle:key-bundles', 'can:fetchKeyBundles,user']);
 
+        // Web push: the browser registers its subscription so it is notified while the app is closed.
+        Route::get('push/public-key', [PushSubscriptionController::class, 'publicKey']);
+        Route::get('push/subscriptions', [PushSubscriptionController::class, 'index']);
+        Route::post('push/subscriptions', [PushSubscriptionController::class, 'store'])->middleware('throttle:push-subscriptions');
+        Route::delete('push/subscriptions/{subscription}', [PushSubscriptionController::class, 'destroy'])->middleware('can:manage,subscription');
+
         Route::get('rooms', [RoomController::class, 'index']);
         Route::post('rooms', [RoomController::class, 'store']);
 
@@ -90,6 +98,8 @@ Route::prefix('v1')->group(function () {
             Route::post('unlock', [RoomLifecycleController::class, 'unlock'])->middleware('can:host,room');
             Route::post('end', [RoomLifecycleController::class, 'end'])->middleware('can:host,room');
             Route::post('co-hosts/{user}', [RoomParticipantController::class, 'coHost'])->middleware('can:appointCoHost,room,user');
+
+            Route::get('audit-log', [RoomAuditLogController::class, 'index'])->middleware('can:host,room');
         });
 
         Route::get('messages/{message}', [MessageController::class, 'show'])->middleware('can:view,message');

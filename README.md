@@ -1,292 +1,317 @@
 # Karen Connect — Backend API
 
-Laravel API for a private chat + video platform. See the build spec for the phase plan.
-**Status: Phase 5 (end-to-end encryption support) complete.** The full README (deployment, Reverb, LiveKit/TURN) is written in Phase 6.
+The backend for **Karen Connect**, a private chat and video-meeting app for a Karen community organisation. Many of its users are on slow or unstable mobile connections along the Thai–Myanmar border, so the API keeps payloads small, paginates every list, and makes every send safe to retry. Privacy is a core requirement: in end-to-end encrypted chats the server never sees message content.
 
-## Local setup
+This repository is the API only. The frontend is a separate Vue 3 project that talks to it. **[docs/API.md](docs/API.md) is the contract with that frontend**: every endpoint, every real-time event, with examples.
+
+| | |
+|---|---|
+| Framework | Laravel 13, PHP 8.3+ |
+| Database | PostgreSQL 16 |
+| Cache, queues, presence | Redis |
+| Authentication | Laravel Sanctum bearer tokens (30 days) |
+| WebSockets | Laravel Reverb |
+| Video | LiveKit (self-hosted), via `agence104/livekit-server-sdk` |
+| Push notifications | Web Push (VAPID), via `minishlink/web-push` |
+| Tests, style | Pest, Laravel Pint |
+
+**What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · web push notifications · a room audit log · scheduled clean-up.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Processes the app needs](#processes-the-app-needs)
+- [Docker](#docker)
+- [Configuration](#configuration)
+- [Scheduled jobs](#scheduled-jobs)
+- [LiveKit and TURN](#livekit-and-turn)
+- [Web push](#web-push)
+- [End-to-end encryption](#end-to-end-encryption)
+- [Security](#security)
+- [Tests and code style](#tests-and-code-style)
+- [Deployment checklist](#deployment-checklist)
+- [Project layout](#project-layout)
+- [Troubleshooting](#troubleshooting)
+
+## Quick start
+
+You need PHP 8.3+ with the extensions `bcmath`, `curl`, `gd`, `intl`, `mbstring`, `openssl`, `pcntl`, `pdo_pgsql`, `redis`, `sodium`, `zip` (Composer checks the required ones), Composer, PostgreSQL 16 and Redis. The easiest way to get the databases is Docker (below), but locally installed ones work as well.
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres redis      # or use locally installed Postgres 16 + Redis
+docker compose up -d postgres redis      # or use your own Postgres 16 + Redis
 composer install
 php artisan key:generate
-php artisan migrate:fresh --seed         # seeded users: user1@example.com … user5@example.com, password "password"
+php artisan migrate:fresh --seed         # sample data, see below
 php artisan storage:link                 # serves uploaded avatars from /storage
-php artisan serve
+php artisan serve                        # http://localhost:8000
 ```
 
-Video rooms also need LiveKit (`docker compose up -d livekit`, see [Video rooms](#video-rooms-phase-4)).
-Real-time needs three more processes (each in its own terminal):
+`migrate:fresh --seed` creates five users (`user1@example.com` … `user5@example.com`, all with the password `password`), two direct chats with a few messages, one group chat and one scheduled video room. **Never run it on a database that holds real data:** `migrate:fresh` drops every table.
+
+Check it works:
 
 ```bash
-php artisan reverb:start     # WebSocket server (default :8080)
-php artisan queue:work       # publishes broadcast events and generates thumbnails
-php artisan schedule:work    # runs presence:mark-offline every minute (use a cron entry in production)
+curl -s localhost:8000/api/v1/auth/login -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d '{"email":"user1@example.com","password":"password","device_name":"curl"}'
 ```
 
-## Tests and style
+The same account can then call, for example, `GET /api/v1/chats` with `Authorization: Bearer <token>`.
+
+## Processes the app needs
+
+`php artisan serve` alone gives you the REST API. Everything real-time or scheduled needs its own process; in production each runs under a process manager (see the [checklist](#deployment-checklist)).
+
+| Process | Command | Without it |
+|---|---|---|
+| Web server | `php artisan serve` (development) · PHP-FPM + nginx (production) | No API |
+| Queue worker | `php artisan queue:work` | Real-time events are never published, no push notifications, no thumbnails, no delayed host transfer |
+| Reverb (WebSockets) | `php artisan reverb:start` (port 8080) | No real-time updates; the REST API still works |
+| Scheduler | `php artisan schedule:work` (development) · one cron line `* * * * * php artisan schedule:run` (production) | Users never go offline, clean-up never runs |
+| LiveKit | `docker compose up -d livekit` | Nobody can join a video room (`503`) |
+
+Leave `REDIS_QUEUE_BLOCK_FOR` at its default so the worker picks up events immediately instead of polling every few seconds.
+
+## Docker
+
+`docker-compose.yml` starts the infrastructure for local development. Laravel, Reverb and the queue worker run on your machine via `artisan`.
+
+| Service | Image | Ports | Notes |
+|---|---|---|---|
+| `postgres` | `postgres:16` | 5432 | Database `kanyaw_connect` (user `kanyaw`, password `secret`). A second database, `kanyaw_connect_test`, is created for the test suite. Data lives in the `postgres-data` volume. |
+| `redis` | `redis:7` | 6379 | Cache, queues, presence. Volume `redis-data`. |
+| `livekit` | `livekit/livekit-server` | 7880 (signalling), 7881/tcp, 50000–50100/udp | Configured by `docker/livekit/livekit.yaml` (development key and secret, webhook to `host.docker.internal:8000`). |
 
 ```bash
-./vendor/bin/pest      # needs the kanyaw_connect_test Postgres database (docker compose creates it)
-./vendor/bin/pint
+docker compose up -d            # everything
+docker compose up -d postgres redis
+docker compose down             # stop (data stays); add -v to delete the volumes too
 ```
 
-## API (Phase 1)
+The compose file is for development. It has not been run in the environment this code was built in (there is no Docker daemon there); the LiveKit and database behaviour were verified against locally started servers instead. For production see [LiveKit and TURN](#livekit-and-turn) and the [checklist](#deployment-checklist).
 
-All routes are under `/api/v1`. Send `Accept: application/json`; authenticated routes take `Authorization: Bearer <token>`.
+## Configuration
 
-| Method | Path | Notes |
+Settings come from environment variables (`.env`). Run `php artisan config:cache` in production: nothing in the code reads `env()` outside the `config/` files, so caching is safe. `.env.example` lists everything with development defaults.
+
+### Application and database
+
+| Variable | Default | Meaning |
 |---|---|---|
-| POST | `/auth/register` | `name, email, password, password_confirmation, phone?` → 201 `{ data: user }` (does not log in) |
-| POST | `/auth/login` | `email, password, device_name?` → `{ token, user }`; 5 attempts/min per email+IP, then 429 |
-| POST | `/auth/logout` | revokes the current token only |
-| GET | `/me` | `{ data: user }` |
-| PATCH | `/me` | `name, phone, timezone, locale (en/my/ksw), settings` — `settings` is merged key-by-key |
-| POST | `/me/avatar` | multipart `avatar` (jpg/png/webp, ≤ 2 MB); stores original + 256×256 WebP thumbnail |
+| `APP_ENV`, `APP_DEBUG` | `local`, `true` | **In production use `production` and `false`.** With debug on, error responses include stack traces and file paths. |
+| `APP_URL` | `http://localhost:8000` | The public URL of the API. Signed attachment URLs are built from it. |
+| `APP_KEY` | | Generate with `php artisan key:generate`. Losing it makes stored push secrets unreadable. |
+| `FRONTEND_URL` | `http://localhost:5173` | Origin of the Vue frontend. |
+| `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | `127.0.0.1`, `5432`, `kanyaw_connect`, `kanyaw`, `secret` | PostgreSQL |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | `127.0.0.1`, `6379`, `null` | Redis |
+| `CACHE_STORE`, `QUEUE_CONNECTION` | `redis`, `redis` | Keep both on Redis: presence and the queue depend on it. |
+| `CHAT_ATTACHMENTS_DISK` | `local` | Filesystem disk for attachments (private, served only through signed URLs). Use an S3 disk to keep them off the server. |
 
-## API (Phase 2)
+### Authentication, CORS and security
 
-Chat endpoints (all need a bearer token; everything under `/chats/{chat}` is members-only → 403 for non-members):
-
-| Method | Path | Notes |
+| Variable | Default | Meaning |
 |---|---|---|
-| GET | `/chats` | my chats, most recently active first; cursor-paginated. Each row has `latest_message`, `unread_count`, `my_membership`, and `other_user` (direct chats) |
-| POST | `/chats/direct` | `{ user_id }` → 201 new, or 200 with the existing chat |
-| POST | `/chats/group` | `{ name, description?, member_ids[] }` (do not include yourself; you become owner) |
-| GET | `/chats/{chat}` | same shape as a list row, plus `members[]` |
-| PATCH | `/chats/{chat}` | `{ name?, description? }` — group admin/owner |
-| DELETE | `/chats/{chat}/leave` | groups only. Owner leaving passes ownership on; last one out deletes the chat |
-| POST | `/chats/{chat}/members` | `{ user_ids[] }` — group admin/owner; already-members are skipped |
-| DELETE | `/chats/{chat}/members/{user}` | owner removes anyone; admin removes plain members |
-| PATCH | `/chats/{chat}/members/{user}` | `{ role: admin\|member }` — owner only |
-| GET | `/chats/{chat}/messages` | newest first, cursor-paginated |
-| POST | `/chats/{chat}/messages` | `{ client_id, type, content?, reply_to_id?, metadata?.attachment_id }`; 201 new, 200 on a retry with the same `client_id`. 30/min per user |
-| PATCH | `/messages/{message}` | `{ content }` — sender only, within 24 h |
-| DELETE | `/messages/{message}` | sender, or a group admin/owner (soft delete) |
-| POST | `/chats/{chat}/read` | `{ message_id }` — moves the read position forward only |
-| POST | `/chats/{chat}/attachments` | multipart `file` (≤ 25 MB) → attachment id; send it with `metadata.attachment_id` |
-| GET | `/attachments/{attachment}/file`, `/thumbnail` | no bearer token; works only with the signed URL from the API (valid 60 min) |
+| `SANCTUM_TOKEN_EXPIRATION` | `43200` | Login token lifetime in minutes (43200 = 30 days). `0` = never expires. |
+| `SANCTUM_STATEFUL_DOMAINS` | `localhost:5173` | Only for cookie sessions, which this API does not use. Bearer tokens need nothing. |
+| `SANCTUM_TOKEN_PREFIX` | empty | Optional prefix for new tokens (helps secret scanners find leaked tokens). |
+| `CORS_ALLOWED_ORIGINS` | `FRONTEND_URL` | Browser origins allowed to call the API, comma separated. |
+| `TRUSTED_PROXIES` | empty | Proxies whose `X-Forwarded-*` headers are trusted: `*` or comma separated IPs / CIDRs. **Required behind a reverse proxy or load balancer.** |
+| `SECURITY_HSTS` | `true` | Send `Strict-Transport-Security` on HTTPS requests. |
+| `API_RATE_LIMIT` | `300` | Requests per minute per signed-in user (flood backstop). |
+| `REGISTER_RATE_LIMIT` | `20` | Sign-ups per hour per IP address. |
 
-Pagination: `?per_page=` (default 30, max 100) and `?cursor=` — follow `links.next` until it is `null`.
+### Real-time (Reverb)
 
-Notes:
-- Uploaded attachments are private (`storage/app/private`); thumbnails are generated by a queued job (`php artisan queue:work`), so `thumbnail_url` is `null` right after upload. Raise PHP's `upload_max_filesize` / `post_max_size` above 25 MB in production, or large uploads will fail before Laravel sees them.
-- Timestamps in the chat tables have microsecond precision (see `App\Models\Concerns\HasMicrosecondTimestamps`). Pass dates to query-builder `update()` / `where()` as strings from `Model::microseconds($date)`, never as Carbon objects.
-
-## Real-time (Phase 3)
-
-WebSockets run on Laravel Reverb, which speaks the Pusher protocol, so the frontend uses `laravel-echo` + `pusher-js` with `broadcaster: 'reverb'`. Events are queued, so a queue worker must be running.
-
-**Authorizing channels.** Point Echo at `POST /api/v1/broadcasting/auth` and send the same bearer token as for the API.
-
-| Channel | Who may join | Used for |
+| Variable | Default | Meaning |
 |---|---|---|
-| `private-user.{userId}` | that user only | always-on channel: new messages and new chats in chats you have **not** opened, being removed from a chat, read state from your other devices |
-| `private-chat.{chatId}` | chat members | all events of the chat you have open |
-| `presence-chat.{chatId}` | chat members | who is in the chat right now, and typing indicators. Member info is `{ id, name, avatar_url }` only |
+| `BROADCAST_CONNECTION` | `reverb` | |
+| `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` | development values | Credentials of the Reverb application. **Change all three in production.** The key is public (the frontend uses it); the secret is not. |
+| `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME` | `localhost`, `8080`, `http` | Where clients and the API reach Reverb. Production: your public host, `443`, `https`. |
+| `REVERB_SERVER_HOST`, `REVERB_SERVER_PORT` | `0.0.0.0`, `8080` | What `reverb:start` listens on. |
+| `REVERB_ALLOWED_ORIGINS` | `*` | Browser origins allowed to open a WebSocket. **Set to the frontend origin in production.** |
+| `REVERB_MAX_REQUEST_SIZE` | `100000` | Largest event Reverb accepts, in bytes. 5000 Burmese or Karen characters are about 15 KB in UTF-8, so the library default of 10 KB is too small. |
 
-`private-chat.X` and `presence-chat.X` are different channels: a client with a chat open should join **both** (`Echo.private('chat.X')` and `Echo.join('chat.X')`) and subscribe to `private-user.{me}` once at login. `presence-room.{roomId}` arrives with video rooms in Phase 4.
+### Video (LiveKit) and rooms
 
-**Typing indicators** are client whispers on the presence channel; there is no server endpoint:
+| Variable | Default | Meaning |
+|---|---|---|
+| `LIVEKIT_URL` | `ws://localhost:7880` | What **clients** connect to (`ws://` or `wss://`). |
+| `LIVEKIT_HOST` | `http://localhost:7880` | What **the API** calls (`http://` or `https://`). Different on purpose: inside a private network it is usually an internal address. |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | development values | Must match the `keys:` entry in LiveKit's config. The secret also signs webhooks. |
+| `LIVEKIT_TOKEN_TTL` | `3600` | Lifetime of a join token, seconds. |
+| `ROOM_HOST_TRANSFER_GRACE` | `0` | Seconds to wait before handing the host role on when the host's connection drops. A value such as `30` stops a brief mobile drop from costing the host their role. Needs the queue worker. |
 
-```js
-Echo.join(`chat.${id}`).listenForWhisper('typing', (e) => { /* e.user_id, e.typing */ });
-Echo.join(`chat.${id}`).whisper('typing', { user_id: me.id, typing: true });   // throttle to ~1 per 2 s
+### Web push
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | empty | Create with `php artisan push:vapid`. Push stays off while either is empty. |
+| `VAPID_SUBJECT` | `mailto:` + `MAIL_FROM_ADDRESS` | A contact (`mailto:` or `https:`) push services can reach. |
+| `PUSH_TTL` | `86400` | Seconds a push service keeps a notification for an offline phone. |
+| `PUSH_URGENCY` | `high` | `very-low`, `low`, `normal` or `high`. Chat messages are `high` so phones in power-saving mode still deliver them. |
+| `PUSH_SHOW_PREVIEW` | `true` | Show sender and first words in plaintext chats. Encrypted chats always say "New message". |
+| `PUSH_SKIP_ONLINE` | `true` | Do not push to people whose app is open. |
+| `PUSH_ALLOWED_HOSTS` | Google, Mozilla, Apple, Windows push services | Which push-service hosts a client may register (comma separated, `*.example.com` wildcards). Replaces the built-in list. |
+| `PUSH_REQUIRE_HTTPS` | `true` | Only turn off to test against a plain-http fake push service. |
+
+### Encryption and housekeeping
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `E2EE_VERIFY_SIGNED_PREKEY` | `true` | Verify the Ed25519 signature on signed prekeys (needs `ext-sodium`). |
+| `CLEANUP_DELETED_MESSAGES_DAYS` | `30` | Deleted messages are removed for good after this many days. |
+| `CLEANUP_ORPHAN_ATTACHMENT_HOURS` | `24` | Uploads never attached to a message are deleted after this many hours. |
+
+Limits that rarely change (group size, page size, device and prekey limits, stale-room thresholds) are plain settings in `config/chat.php`, `config/e2ee.php`, `config/rooms.php` and `config/cleanup.php`.
+
+## Scheduled jobs
+
+All run through the scheduler (`schedule:work` or the cron line). Times are Thailand time (Asia/Bangkok), so the heavy ones run in the quiet hours.
+
+| Command | When | What |
+|---|---|---|
+| `presence:mark-offline` | every minute | Marks users offline when their heartbeat (90 s) has expired |
+| `rooms:end-stale` | every 15 minutes | Ends video rooms that were left behind: never joined (a day after they were due), started but empty for an hour, or running for over 24 hours. Also closes them in LiveKit. |
+| `attachments:purge-orphans` | hourly | Deletes uploads that were never attached to a message (older than 24 h), files included |
+| `messages:purge-deleted` | daily 03:10 | Permanently removes messages deleted more than 30 days ago, with their attachment files and encrypted copies |
+| `sanctum:prune-expired --hours=24` | daily 03:30 | Deletes expired login tokens (and with them the push subscriptions made under them) |
+| `queue:prune-failed --hours=168` | daily 03:40 | Forgets failed jobs older than a week |
+
+Each command can also be run by hand, for example `php artisan messages:purge-deleted`; they print how much they removed and are safe to repeat. The longer jobs use `withoutOverlapping()` (a slow run never overlaps the next) and all but `presence:mark-offline` use `onOneServer()` (two servers do not both run it).
+
+## LiveKit and TURN
+
+Video runs on a self-hosted [LiveKit](https://livekit.io) server, which handles all WebRTC signalling, SDP and ICE. The API never touches media: it decides who may join and signs a token; the frontend connects to LiveKit with `livekit-client`.
+
+**Development:** `docker compose up -d livekit` uses `docker/livekit/livekit.yaml`. Its key and secret must match `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`.
+
+**The webhook is essential.** LiveKit reports who joined and left to `POST /api/v1/webhooks/livekit`; that is the **only** thing that sets `joined_at` / `left_at`, makes a room active, ends it when everyone has left, and moves the host role. Without it rooms never become active and seats are never freed. The `webhook:` section of LiveKit's config must point at the API, and the API must be reachable from the LiveKit server. The request is signed with the LiveKit secret and is rejected (`401`) otherwise.
+
+**Production.** LiveKit needs a public address, TLS, and a **TURN server**. TURN relays media for people behind strict mobile or office firewalls, which is common for this audience; without it some calls will not connect. LiveKit has TURN built in, so no separate coturn is needed. A starting point is `docker/livekit/livekit.production.example.yaml` (copy it, fill in your domains and secrets). It has not been run against a real deployment, so check it against LiveKit's current documentation:
+
+```yaml
+port: 7880
+log_level: info
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+keys:
+  YOUR_API_KEY: YOUR_LONG_RANDOM_SECRET
+turn:
+  enabled: true
+  domain: turn.example.org            # a DNS name pointing at this server
+  cert_file: /certs/fullchain.pem
+  key_file: /certs/privkey.pem
+  tls_port: 5349
+  udp_port: 3478
+webhook:
+  api_key: YOUR_API_KEY
+  urls:
+    - https://api.example.org/api/v1/webhooks/livekit
 ```
 
-**Events** (Echo needs a leading dot for custom names: `.listen('.message.sent', …)`):
+Open these ports in the firewall: `443` (or your proxy's port) for signalling, `7881/tcp`, `3478/udp`, `5349/tcp` (TURN over TLS), and the UDP range `50000-60000`. Put TLS in front of the signalling port (7880) with nginx or Caddy so that `LIVEKIT_URL` can be `wss://livekit.example.org`; `LIVEKIT_HOST` can stay an internal `http://` address. A room that nobody is in is closed by LiveKit after `rooms.livekit_empty_timeout_seconds` (5 minutes), which the webhook turns into `status: ended`.
 
-| Event | Channels | Payload |
-|---|---|---|
-| `message.sent` | `private-chat.{id}` + every member's `private-user` | `{ message }` — same shape as a message from the REST API (without `client_id`) |
-| `message.updated` | `private-chat.{id}` | `{ message }` |
-| `message.deleted` | `private-chat.{id}` | `{ chat_id, message_id }` |
-| `message.read` | `private-chat.{id}` + the reader's `private-user` | `{ chat_id, user_id, last_read_message_id, last_read_at }` |
-| `chat.updated` | `private-chat.{id}` + every member's `private-user` | `{ chat }` — id, type, name, description, avatar_url, is_encrypted, member_count, last_message_at |
-| `chat.member_added` | `private-chat.{id}` + the new member's `private-user` | `{ chat, user }` — `user` is `{ id, name, avatar_url, avatar_thumb_url }` |
-| `chat.member_removed` | `private-chat.{id}` + the removed member's `private-user` | `{ chat_id, user_id }` |
+## Web push
 
-Notes for the frontend:
-- A client subscribed to both a chat and its `private-user` channel receives `message.sent` twice. De-duplicate by `message.id`.
-- When you receive `chat.member_added` on **your own** `private-user` channel (`user.id` is you), you were added to a new chat (or someone started a direct chat with you): fetch it with `GET /chats/{id}` and subscribe.
-- `chat.member_removed` for yourself means: unsubscribe from that chat and drop it.
-- `message.updated` / `message.deleted` are only sent on the chat channel, so a chat list preview may be stale until the list is refreshed.
-- The device that made a change does not get its own event back if Echo sends `X-Socket-ID` (Echo does this automatically for axios requests; add the header yourself with `fetch`).
-- Payloads never contain anyone's email or phone number.
+Push notifications reach a phone whose app is closed. They need three things: the `VAPID_*` keys, the queue worker, and a frontend that registers a service worker (see section 6 of [docs/API.md](docs/API.md#6-guide-push-notifications)).
 
-**Presence (who is online)**
-- `POST /me/heartbeat` every 30–60 s while the app is open (optional body `{ "status": "online" | "away" | "busy" }`). 204 response; max 12/min. Sets a 90-second key and `last_seen_at`; a user who was offline becomes online.
-- `GET /users/presence?ids[]=…` (up to 100) → `{ data: [{ id, status, last_seen_at }] }`. Only you and people you share a chat with are returned; other ids are silently left out. A user whose heartbeat has lapsed is reported `offline`.
-- `presence:mark-offline` (scheduled every minute) sets `status = offline` for users whose key expired.
-
-**Operations**
-- Leave `REDIS_QUEUE_BLOCK_FOR` at its default (5): the queue worker then picks up events immediately instead of polling every 3 seconds.
-- Reverb rejects published events larger than `REVERB_MAX_REQUEST_SIZE` (set to 100 KB here; the library default of 10 KB is too small for 5000 Burmese/Karen characters).
-- In production set `REVERB_ALLOWED_ORIGINS` to the frontend origin(s) and use `REVERB_SCHEME=https` behind a TLS proxy.
-
-## Video rooms (Phase 4)
-
-Video runs on a self-hosted [LiveKit](https://livekit.io) server, which handles all WebRTC signalling, SDP and ICE. The API never touches media: it decides **who may join** and hands out a signed token; the frontend connects to LiveKit with `livekit-client` using that token.
-
-### Setup
-
-- `docker compose up -d livekit` starts LiveKit with `docker/livekit/livekit.yaml` (local development; the API key and secret there must match `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` in `.env`).
-- `LIVEKIT_URL` is what **clients** connect to (`ws://` / `wss://`); `LIVEKIT_HOST` is what **the API** calls (`http://` / `https://`). They are different on purpose.
-- The `webhook:` section of `livekit.yaml` must point at `POST /api/v1/webhooks/livekit`. LiveKit reports who joined and left there; those webhooks are the **only** thing that sets `joined_at` / `left_at`. Without them, rooms never become active and seats are never freed.
-- PHP needs the **`bcmath`** extension (it is declared in `composer.json`): LiveKit's protobuf library uses it to read webhook JSON, and without it every webhook would fail.
-- Optional: `ROOM_HOST_TRANSFER_GRACE=30` waits 30 seconds before handing the host role on when the host's connection drops. The default `0` hands it over immediately. On unstable mobile connections a grace period stops a brief drop from costing the host their role. It needs the queue worker.
-
-### Endpoints
-
-All under `/api/v1`, bearer token required, except the webhook.
-
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/rooms` | `{ name, description?, scheduled_at?, duration_minutes?, chat_id?, password?, waiting_room_enabled?, max_participants? (2–100, default 50) }`. With `scheduled_at` the room is `scheduled`, otherwise `instant`. With `chat_id` (you must be a member) every member of that chat is invited and a `system` message is posted into the chat (`metadata`: `event=room_created`, `room_id`, `host_id`) |
-| GET | `/rooms` | rooms you host, were invited to through a chat, or asked to join; not ended ones. `?filter=hosting\|invited\|upcoming`, cursor-paginated |
-| GET | `/rooms/{room}` | `has_password` (never the password), `present_count`, `my_participation`; the host and co-hosts also get `waiting_participants` |
-| POST | `/rooms/{room}/join` | `{ password? }` → `{ status: "admitted", token, livekit_url, room }` or `{ status: "waiting" }` |
-| POST | `/rooms/{room}/admit/{user}`, `/deny/{user}` | host / co-host. The waiting person is told on their `private-user` channel and then calls `join` again |
-| POST | `/rooms/{room}/lock`, `/unlock`, `/end` | host only. `end` closes the LiveKit room and disconnects everyone |
-| POST | `/rooms/{room}/participants/{user}/remove` | host / co-host (a co-host cannot remove the host or another co-host). The person is also blocked from rejoining |
-| POST | `/rooms/{room}/participants/{user}/mute` | `{ kind?: "audio" \| "video" }` (default audio). Muting only: people unmute themselves |
-| POST | `/rooms/{room}/co-hosts/{user}` | host only; the person must already be admitted. Their LiveKit admin rights apply from their next `join` |
-| POST | `/webhooks/livekit` | called by LiveKit, not by clients; 401 unless the request is signed with our LiveKit secret |
-
-Who can see / join a room: its host, anyone who has asked to join, and members of the linked chat. A room **not** linked to a chat can be joined by anyone who has its id (share the link); password and waiting room still apply.
-
-### Join errors
-
-| Status | `code` | Meaning |
-|---|---|---|
-| 422 | — | `errors.password`: missing or wrong password. The host, and anyone already admitted or waiting, are not asked again |
-| 403 | — | You are not invited to this room, or the host denied / removed you |
-| 409 | `room_ended` | The room is over |
-| 409 | `room_locked` | The host is not letting new people in (people already admitted can still reconnect) |
-| 409 | `room_full` | All seats are taken |
-| 503 | — | The video service (LiveKit) is unreachable; try again |
-| 429 | — | More than 20 join attempts a minute for this room |
-
-A seat is reserved for 120 seconds when a token is issued, so two people asking for the last seat cannot both get in. Reconnecting always works for someone who already holds a seat. The token lasts `LIVEKIT_TOKEN_TTL` seconds (default 3600); its identity is the user's UUID and its metadata is `{ "role", "avatar_url" }`. The host and co-hosts get LiveKit `roomAdmin`.
-
-### Real-time events
-
-Joining the presence channel `presence-room.{roomId}` (`Echo.join('room.' + id)`) is allowed for the host and admitted participants only, with member info `{ id, name, avatar_url }`. People waiting to be let in are **not** on it; what concerns them goes to their `private-user.{id}` channel.
-
-| Event | Channels | Payload |
-|---|---|---|
-| `room.participant_joined` | `presence-room.{id}` | `{ room_id, user, role }` — from LiveKit's webhook |
-| `room.participant_left` | `presence-room.{id}` | `{ room_id, user, role }` |
-| `room.join_requested` | `presence-room.{id}` + host's and co-hosts' `private-user` | `{ room_id, user }` — someone is waiting |
-| `room.admitted` / `room.denied` | the person's `private-user` only | `{ room: { id, name, type, status, host_id, chat_id, is_locked } }` — after `admitted`, call `join` again |
-| `room.role_changed` | `presence-room.{id}` | `{ room_id, user_id, role, host_id }` — a co-host was appointed, or the host role moved to `user_id` |
-| `room.ended` | `presence-room.{id}` | `{ room_id, ended_at }` |
-
-### Behaviour worth knowing
-
-- Live media state (camera/microphone on, connection quality, who is speaking) is **not** stored; read it from the LiveKit SDK.
-- The LiveKit room is created when the first person gets a token. If LiveKit closes that room without anyone ever having joined (for example a token was issued but nobody connected), our room is left as it was, so a scheduled meeting is not ended before it starts.
-- When everyone has left and `livekit_empty_timeout_seconds` (5 minutes) has passed, LiveKit closes the room and the webhook ends ours.
-- If the host leaves and others remain, the host role goes to the earliest-joined connected co-host, otherwise the earliest-joined connected participant.
-- A LiveKit token cannot be revoked. If a removed person reconnects with a token they still hold, the webhook handler puts them out again at once.
-- Recording is not implemented (`recording_enabled` is always `false`).
-
-## End-to-end encryption (Phase 5)
-
-In an encrypted chat the server is only a **key directory** and a **ciphertext relay**. All encryption and decryption happens in the clients. The server stores public keys and opaque encrypted blobs, and it never receives a private key or any plaintext. (A test scans the source to make sure no code decrypts or reads ciphertext, and a live check confirmed the plaintext appears nowhere in a full database dump.)
-
-**What the server can still see** (this is metadata, not content): who is in which chat, who sent a message and from which device, when, how big the envelopes are, a message's type (text / image / voice / file) and attachment ids, and reply links. Say so honestly in the app's privacy text.
-
-> **For the frontend.** Use a vetted protocol, not home-made crypto. As a minimum, libsodium `crypto_box` / sealed boxes; ideally a Double Ratchet library (Signal-style). Ed25519 *signing* keys and X25519 *exchange* keys are two separate key pairs: never derive one from the other.
-
-### Keys the server stores (public only; standard padded base64)
-
-| Key | Size | Notes |
-|---|---|---|
-| `identity_public_key` | 32 bytes | Ed25519. Unique across all devices |
-| `exchange_public_key` | 32 bytes | X25519 |
-| `signed_prekey.public_key` | 32 bytes | X25519, with an integer `id` |
-| `signed_prekey.signature` | 64 bytes | Ed25519 signature by the identity key over the **raw 32 bytes** of the signed prekey's public key. The server verifies it (`E2EE_VERIFY_SIGNED_PREKEY=false` turns that off) |
-| one-time prekeys | 32 bytes each | X25519, each with an integer `id`; ids and public keys must be unique |
-
-Integer ids go up to 2,147,483,647. A user can have at most 10 active devices (`config/e2ee.php`) because every message needs one envelope per device.
-
-### Endpoints
-
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/devices` | `{ name, identity_public_key, exchange_public_key, signed_prekey: {id, public_key, signature}, one_time_prekeys: [{id, public_key}] }` (20–100 prekeys) → 201. Extra fields (such as a private key) are rejected. 20 per hour |
-| GET | `/devices` | my active devices, with `unclaimed_prekeys` |
-| DELETE | `/devices/{device}` | revoke: it stops appearing in bundles, can no longer read, senders must stop encrypting for it, its unclaimed prekeys are deleted |
-| PUT | `/devices/{device}/signed-prekey` | `{ id, public_key, signature }`; the id must be new, the signature is verified against the device's identity key |
-| POST | `/devices/{device}/prekeys` | `{ prekeys: [{id, public_key}] }` top-up, 1–100 at a time, at most 200 unclaimed per device; ids are never reused |
-| GET | `/devices/{device}/prekeys/count` | `{ data: { unclaimed } }`: poll this and top up when it runs low |
-| GET | `/users/{user}/key-bundles` | a bundle for each active device, **claiming one one-time prekey per device**. Only for yourself or someone you share a chat with (else 404). 10 per minute per target. Optional `?device_ids[]=` to claim only for those devices, and the `X-Device-Id` header (see below) |
-| GET | `/messages/{message}` | one message (needed because a `message.sent` broadcast carries no envelope) |
-
-Other people's devices (and revoked ones) answer **404** on the `/devices/{device}` routes.
-
-A **key bundle** is `{ device_id, user_id, identity_public_key, exchange_public_key, signed_prekey: {id, public_key, signature}, one_time_prekey: {id, public_key} | null }`. `one_time_prekey` is `null` when the device has run out; start the session with the signed prekey alone. Bundles never include a device name.
-
-Each prekey is handed out **at most once**: claims use `SELECT … FOR UPDATE SKIP LOCKED`, so even simultaneous requests get different prekeys. This is verified with real parallel processes and with 28 simultaneous HTTP requests.
-
-### The `X-Device-Id` header
-
-Tell the server which of **your** devices a request comes from. It is checked against the logged-in user and rejected with **403** if it is not one of their active devices. Required to send and to read in an encrypted chat (missing → 422); optional on `GET /chats`, `GET /chats/{chat}` and `key-bundles`. A device id is not a secret, so never rely on it alone: the user's bearer token is still required. (Add it to your CORS allowed headers.)
-
-### Creating an encrypted chat
-
-`POST /chats/direct` and `POST /chats/group` accept `is_encrypted: true`. It is fixed for the life of the chat: a chat cannot be converted either way. Two people can have a plaintext and an encrypted direct chat side by side.
-
-### Sending an encrypted message
-
-1. Register the device (once). Keep every private key on the device.
-2. Create or open the encrypted chat.
-3. `GET /users/{user}/key-bundles` for each member who has devices you have no session with yet. Include your **own** other devices (`GET /users/{me}/key-bundles` skips the device named in `X-Device-Id`).
-4. Encrypt the message once **per recipient device**.
-5. `POST /chats/{chat}/messages` with `X-Device-Id: <your device>`:
-
-```json
-{
-  "client_id": "…uuid…",
-  "type": "text",
-  "envelopes": [
-    { "recipient_device_id": "…", "ciphertext": "…base64…", "header": { "alg": "…", "nonce": "…", "ephemeral_key": "…", "prekey_id": 7 } }
-  ]
-}
+```bash
+php artisan push:vapid        # prints VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT for your .env
 ```
 
-Rules:
-- `content` must be empty. Plaintext is rejected with 422. The text (and an image caption) goes inside the ciphertext.
-- There must be an envelope for **every active device of every member, including your own other devices**, except the sending device (it may include one for itself, but need not).
-- `ciphertext` and `header` are opaque to the server and stored exactly as sent. Limits: ciphertext 32,768 characters (text, no NUL bytes; send base64), header a non-empty object up to 4,096 bytes, at most 1,000 envelopes.
-- Sizes and replies work as in plaintext chats (`client_id` idempotency, `reply_to_id`, media with `metadata.attachment_id`, 30 messages per minute).
+Create the pair once and keep it: replacing it signs every browser out of push. Notifications are encrypted for the browser (the push service cannot read them) and only ever contain "New message" for encrypted chats. The server only talks to the well-known push services; a client cannot make it call an arbitrary address (see `PUSH_ALLOWED_HOSTS`).
 
-If the envelopes do not match, you get **409** and nothing is stored:
+## End-to-end encryption
 
-```json
-{ "message": "…", "code": "envelope_mismatch", "missing_device_ids": ["…"], "unexpected_device_ids": ["…"] }
+In an encrypted chat the server is only a **key directory** and a **ciphertext relay**. It stores public keys and opaque encrypted blobs, and never receives a private key or any plaintext. A test scans the source to prove that no code decrypts or reads ciphertext. The details of the endpoints and rules are in [docs/API.md, section 5](docs/API.md#5-guide-end-to-end-encryption).
+
+> **For the frontend.** Use a vetted protocol, not home-made crypto. As a minimum, libsodium `crypto_box` / sealed boxes; ideally a Double Ratchet library (Signal-style). Ed25519 *signing* keys and X25519 *exchange* keys are two separate key pairs: never derive one from the other ad hoc.
+
+What the server can still see is metadata: who is in which chat, who sent a message and from which device, when, how big it is, and its type. Say so in the app's privacy text. PHP needs `ext-sodium` (it is part of PHP's core) only to verify the signature on signed prekeys.
+
+## Security
+
+- **Authentication:** bearer tokens that expire after 30 days and are not extended by use; one token per device; logging out revokes only that device. Login is limited to 5 attempts a minute per email and IP address, registration to 20 an hour per IP address, and every signed-in user to 300 requests a minute.
+- **Authorisation** lives in policies and route middleware, which run before validation: a stranger gets `403` whatever they send. Some lookups answer `404` instead, so ids cannot be probed (other people's devices, messages of chats you are not in).
+- **Headers:** every response has `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a restrictive `Content-Security-Policy`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`; HTTPS responses also carry `Strict-Transport-Security`.
+- **CORS** allows only the frontend origin(s) in `CORS_ALLOWED_ORIGINS`, with the headers the app uses (`Authorization`, `Content-Type`, `X-Device-Id`, `X-Socket-ID`).
+- **Errors** never reveal stack traces, file paths or class names when `APP_DEBUG=false`.
+- **Files:** attachments are private and served only through signed URLs that expire after an hour; the stored name comes from the file's content, never from the client; avatars exclude SVG.
+- **Push endpoints:** only known browser push services are accepted, so the server cannot be aimed at internal addresses.
+- **Audit log:** every action of a room host or co-host is recorded (who, what, to whom, when; no IP addresses) and readable by the host: `GET /rooms/{room}/audit-log`.
+- **Secrets at rest:** passwords are hashed; room passwords are hashed; push auth secrets are encrypted with `APP_KEY`; end-to-end private keys never reach the server.
+
+## Tests and code style
+
+```bash
+./vendor/bin/pest      # needs the kanyaw_connect_test database (docker compose creates it)
+./vendor/bin/pint      # fixes style; add --test to only check
 ```
 
-Fetch `key-bundles?device_ids[]=…` for the missing devices, add their envelopes, drop the unexpected ones (revoked, or no longer in the chat), and send again with the same `client_id`. `409 no_recipient_devices` means nobody else in the chat has registered a device yet.
+The suite has feature tests for every endpoint (happy path, `401`, `403`), concurrency tests that use real parallel processes (one-time prekeys can only be claimed once), source-scan tests (nothing decrypts ciphertext), and documentation tests: `docs/API.md` must list every route and every broadcast event, and its links and JSON examples must be valid. LiveKit and web push are replaced by fakes in the tests, so no network is needed. GitHub Actions runs Pint and Pest on every push (`.github/workflows/tests.yml`).
 
-### Reading
+If Pest ends with no output at all, a fatal PHP error is probably being swallowed by the `laravel/pao` output filter; run `PAO_DISABLE=1 ./vendor/bin/pest` to see it.
 
-`GET /chats/{chat}/messages` (and `GET /messages/{id}`) in an encrypted chat need `X-Device-Id`. Each message has `content: null`, `encrypted: true`, `metadata.sender_device_id` and `envelope`: **only your device's own** `{ recipient_device_id, ciphertext, header }`, never another device's. `envelope` is `null` if your device cannot read that message: it sent it itself, or it was added after the message was sent (new devices cannot read old history). Without a device header on `GET /chats`, `latest_message.envelope` is left out; with one it is included so the list can show previews.
+## Deployment checklist
 
-Real-time `message.sent` events for encrypted messages carry **no envelope and no ciphertext**: fetch the message with `GET /messages/{id}` and your `X-Device-Id`.
+**Server and PHP**
+- [ ] PHP 8.3+ with the extensions above; `upload_max_filesize` and `post_max_size` above 25 MB (for example `26M` and `30M`), or large uploads fail before Laravel sees them. Match `client_max_body_size` in nginx.
+- [ ] PostgreSQL 16 and Redis 7, both reachable only from the app servers. Redis with persistence (`appendonly yes`) so queued events survive a restart. Backups of the database **and** of `storage/app/private` (attachments).
+- [ ] HTTPS everywhere; the API, Reverb and LiveKit each behind TLS.
 
-### Device events
+**Application**
+- [ ] `.env` for production: `APP_ENV=production`, `APP_DEBUG=false`, a real `APP_URL`, `php artisan key:generate`, strong `DB_PASSWORD`, `REDIS_PASSWORD`.
+- [ ] `TRUSTED_PROXIES` set if the app is behind a proxy or load balancer (otherwise rate limits see the proxy's address and signed attachment URLs do not validate).
+- [ ] `CORS_ALLOWED_ORIGINS` and `REVERB_ALLOWED_ORIGINS` set to the frontend origin(s); new `REVERB_APP_ID/KEY/SECRET`; new `LIVEKIT_API_KEY/SECRET` (long and random).
+- [ ] `php artisan migrate --force` (not `migrate:fresh`, and do not seed production).
+- [ ] `php artisan storage:link`, then `php artisan config:cache route:cache event:cache`; run them again after every deploy.
+- [ ] `php artisan push:vapid` once, keys saved in `.env`.
 
-`device.added` and `device.revoked` go to `private-user.{id}` of the device owner (their other devices) and of everyone who shares an **encrypted** chat with them. The payload is just `{ user_id, device_id }`: on `device.added`, fetch that user's bundles and re-key; on `device.revoked`, forget the device.
+**Processes** (use Supervisor or systemd so they restart)
+- [ ] PHP-FPM + nginx for the API.
+- [ ] `php artisan queue:work redis --tries=3 --max-time=3600` — restart it on deploy with `php artisan queue:restart`.
+- [ ] `php artisan reverb:start` behind a TLS proxy that forwards WebSocket upgrades (`proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`).
+- [ ] Cron: `* * * * * cd /var/www/kanyaw-connect && php artisan schedule:run >> /dev/null 2>&1`
+- [ ] LiveKit with TLS and TURN, its webhook pointing at the API (see above).
 
-### What does not work in encrypted chats
+**After deploying**
+- [ ] `GET /up` answers `200`. `POST /auth/login` works. `php artisan schedule:list` shows the jobs.
+- [ ] Send a message between two accounts and see it arrive in real time (proves the queue worker and Reverb).
+- [ ] Join a video room from two devices on different networks, one on mobile data (proves TURN).
+- [ ] `php artisan queue:failed` is empty after a few minutes.
 
-- **Editing** is refused (the server cannot re-encrypt for every device). Delete and send a new message. Deleting removes the envelopes at once.
-- **Attachments** are opaque encrypted blobs: no thumbnail, no type check, the file name is not stored (keep the real name and type inside the message) and downloads are always forced to download. An optional opaque `encrypted_key` (max 4,096 characters) can be sent with the upload and is returned untouched.
-- The server cannot make **search, previews or push text** from content. Push notifications for these chats will only say "New message" (Phase 6).
-- Members added later cannot read earlier messages.
+## Project layout
 
-### Setup notes
+```
+app/Actions/       one class per business operation (SendMessage, JoinRoom, EndStaleRooms, …)
+app/Services/      shared helpers (LiveKit, web push, presence, key bundles, broadcasting)
+app/Http/          thin controllers, Form Requests (validation), API Resources (JSON shape), middleware
+app/Policies/      authorisation rules (who may do what)
+app/Events/        broadcast events (queued, dot-named: message.sent, room.ended, …)
+app/Console/       artisan commands (scheduled housekeeping, VAPID keys)
+config/            chat, rooms, e2ee, push, cleanup, security, cors, services (LiveKit)
+database/          migrations (UUID keys), factories, seeder
+docs/API.md        the API contract for the frontend
+tests/             Feature (every endpoint), Unit (source scans, helpers), Integration (real parallel processes)
+```
 
-PHP needs `ext-sodium` (only to verify the signed prekey; it is part of PHP's core) alongside `ext-bcmath`. A client message is never trimmed or rewritten: Laravel's whitespace trimming and empty-string-to-null conversion are switched off for everything under `envelopes`.
+Conventions: UUID primary keys and `foreignUuid` everywhere; routes under `/api/v1`; validation only in Form Requests; authorisation only in policies; business logic in Actions and Services; lists use cursor pagination (30 by default, 100 at most); broadcast events are queued; rate limits are named limiters in `AppServiceProvider`; places where two requests could race use transactions and row locks.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Messages are sent but nobody receives them live | The queue worker (`queue:work`) or Reverb is not running |
+| A video room never becomes `active`, seats are never freed | LiveKit cannot reach `/api/v1/webhooks/livekit`, or `LIVEKIT_API_SECRET` differs between LiveKit and `.env` |
+| Joining a room answers `503` | LiveKit is not running or `LIVEKIT_HOST` is wrong |
+| Attachment links answer `403` behind a proxy | `TRUSTED_PROXIES` is not set, so the signature was made for another scheme or host |
+| Browser says "blocked by CORS" | The frontend origin is not in `CORS_ALLOWED_ORIGINS` (it must match scheme, host and port exactly), or the request sends a header that is not allowed |
+| WebSocket refuses to connect | The frontend origin is not in `REVERB_ALLOWED_ORIGINS`, or the proxy does not forward `Upgrade` headers |
+| No push notifications | No `VAPID_*` keys, no queue worker, the app is open (online users are skipped), the chat is muted, or the browser never subscribed (`GET /push/subscriptions`) |
+| Users show as online for ever | The scheduler is not running (`presence:mark-offline`) |
+| Large uploads fail | `upload_max_filesize` / `post_max_size` / nginx `client_max_body_size` are below 25 MB |
+| `Class "Sodium…"` / `bcmath` errors | The `sodium` or `bcmath` PHP extension is missing |
+| Pest prints nothing | See [Tests and code style](#tests-and-code-style) |

@@ -70,14 +70,41 @@ it('only uses libsodium to verify a public signature', function () {
     expect($users)->toBe(['app/Services/SignedPrekeyVerifier.php']);
 });
 
-it('never holds a private key', function () {
+it('never holds a private key of a user', function () {
+    // The one private key the server does own is its own VAPID key, which signs the web-push requests it
+    // sends to browsers' push services. It is not a user's key and protects no message content, and it
+    // may appear only in the two files that generate and use it.
+    $vapid = [
+        'app/Services/WebPushService.php',
+        'app/Console/Commands/GenerateVapidKeys.php',
+    ];
+
     $found = [];
     foreach (phpFilesIn(projectRoot('app')) as $file) {
+        $relative = str_replace(projectRoot().'/', '', $file);
         $code = strtolower(stripComments(file_get_contents($file)));
         foreach (['secretkey', 'secret_key', 'private_key', 'privatekey'] as $needle) {
-            if (str_contains($code, $needle)) {
-                $found[] = str_replace(projectRoot().'/', '', $file)." mentions {$needle}";
+            if (str_contains($code, $needle) && ! in_array($relative, $vapid, true)) {
+                $found[] = "{$relative} mentions {$needle}";
             }
+        }
+    }
+
+    expect($found)->toBe([]);
+});
+
+it('keeps the VAPID key out of everything that handles messages or devices', function () {
+    $handlers = [
+        ...phpFilesIn(projectRoot('app/Actions/Messages')),
+        ...phpFilesIn(projectRoot('app/Actions/Devices')),
+        ...phpFilesIn(projectRoot('app/Services')),
+    ];
+
+    $found = [];
+    foreach ($handlers as $file) {
+        $relative = str_replace(projectRoot().'/', '', $file);
+        if ($relative !== 'app/Services/WebPushService.php' && str_contains(strtolower(stripComments(file_get_contents($file))), 'vapid')) {
+            $found[] = $relative;
         }
     }
 

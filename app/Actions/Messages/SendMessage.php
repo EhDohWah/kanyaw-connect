@@ -2,6 +2,7 @@
 
 namespace App\Actions\Messages;
 
+use App\Actions\Push\NotifyMessageRecipients;
 use App\Enums\MessageType;
 use App\Exceptions\EncryptionConflictException;
 use App\Models\Attachment;
@@ -20,7 +21,7 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class SendMessage
 {
-    public function __construct(private ChatBroadcaster $broadcaster) {}
+    public function __construct(private ChatBroadcaster $broadcaster, private NotifyMessageRecipients $notifier) {}
 
     /**
      * Send a message. Idempotent on (sender, client_id): a retry returns the original message.
@@ -56,6 +57,7 @@ class SendMessage
         }
 
         $this->broadcaster->messageSent($message);
+        $this->notifier->handle($message);
 
         return [$message, true];
     }

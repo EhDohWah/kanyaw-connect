@@ -48,9 +48,12 @@ return [
     | considered expired. This will override any values set in the token's
     | "expires_at" attribute, but first-party sessions are not affected.
     |
+    | Tokens last 30 days (43200 minutes) unless SANCTUM_TOKEN_EXPIRATION says otherwise;
+    | 0 turns expiry off. Expired tokens are deleted daily by sanctum:prune-expired.
+    |
     */
 
-    'expiration' => env('SANCTUM_TOKEN_EXPIRATION') ? (int) env('SANCTUM_TOKEN_EXPIRATION') : null,
+    'expiration' => (int) env('SANCTUM_TOKEN_EXPIRATION', 60 * 24 * 30) ?: null,
 
     /*
     |--------------------------------------------------------------------------

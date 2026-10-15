@@ -4,11 +4,14 @@ use App\Exceptions\EncryptionConflictException;
 use App\Exceptions\LiveKitException;
 use App\Exceptions\RoomConflictException;
 use App\Http\Middleware\KeepEnvelopesUntouched;
+use App\Http\Middleware\SecurityHeaders;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -22,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
         'middleware' => ['auth:sanctum'],
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(SecurityHeaders::class);
+
         // Encrypted envelopes are opaque and must be stored exactly as sent: no trimming and no
         // empty-string-to-null conversion for anything under `envelopes`.
         $middleware->trimStrings(except: ['envelopes.*']);
@@ -31,6 +36,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (LiveKitException $e) => response()->json(['message' => $e->getMessage()], 503));
         $exceptions->render(fn (EncryptionConflictException $e) => response()->json(['message' => $e->getMessage(), 'code' => $e->errorCode] + $e->extra, $e->status));
         $exceptions->render(fn (RoomConflictException $e) => response()->json(['message' => $e->getMessage(), 'code' => $e->errorCode], $e->status));
+
+        // Laravel's message for an unknown id names the model class ("No query results for model
+        // [App\Models\Message] ..."). Clients do not need to know how the server is built.
+        $exceptions->render(function (NotFoundHttpException $e) {
+            if ($e->getPrevious() instanceof ModelNotFoundException) {
+                return response()->json(['message' => 'Not found.'], 404);
+            }
+        });
 
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),

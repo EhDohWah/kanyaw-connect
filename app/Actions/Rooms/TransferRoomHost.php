@@ -3,16 +3,18 @@
 namespace App\Actions\Rooms;
 
 use App\Enums\RoomAdmission;
+use App\Enums\RoomAuditAction;
 use App\Enums\RoomRole;
 use App\Enums\RoomStatus;
 use App\Models\Room;
 use App\Models\RoomParticipant;
+use App\Services\RoomAuditor;
 use App\Services\RoomBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class TransferRoomHost
 {
-    public function __construct(private RoomBroadcaster $broadcaster) {}
+    public function __construct(private RoomBroadcaster $broadcaster, private RoomAuditor $auditor) {}
 
     /**
      * After the host has left, hand the host role to the earliest-joined co-host who is connected,
@@ -52,6 +54,9 @@ class TransferRoomHost
             $previous?->update(['role' => RoomRole::Participant]);
             $successor->update(['role' => RoomRole::Host]);
             $locked->update(['host_id' => $successor->user_id]);
+            $this->auditor->record($locked, RoomAuditAction::HostTransferred, null, $successor->user_id, [
+                'previous_host_id' => $previousHostId,
+            ]);
 
             $room->setRawAttributes($locked->getAttributes(), true);
 

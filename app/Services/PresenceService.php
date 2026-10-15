@@ -72,6 +72,17 @@ class PresenceService
     }
 
     /**
+     * Which of these users have a live heartbeat right now.
+     *
+     * @param  list<string>  $ids
+     * @return list<string>
+     */
+    public function onlineAmong(array $ids): array
+    {
+        return array_keys(array_filter($this->alive($ids)));
+    }
+
+    /**
      * Mark users whose heartbeat has expired as offline. Returns how many were changed.
      */
     public function markStaleOffline(): int

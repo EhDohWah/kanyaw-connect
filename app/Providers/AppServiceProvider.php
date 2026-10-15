@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Services\LiveKitService;
+use App\Services\WebPushService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -19,6 +21,13 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(LiveKitService::class, fn () => new LiveKitService(config('services.livekit')));
+
+        $this->app->singleton(WebPushService::class, fn () => new WebPushService(
+            config('push.vapid'),
+            config('push.ttl_seconds'),
+            config('push.urgency'),
+            config('push.timeout_seconds'),
+        ));
     }
 
     /**
@@ -28,11 +37,31 @@ class AppServiceProvider extends ServiceProvider
     {
         Password::defaults(fn () => Password::min(8));
 
+        $this->trustProxies();
         $this->configureRateLimiting();
+    }
+
+    /**
+     * Believe X-Forwarded-* headers from the configured proxies (see config/security.php).
+     */
+    private function trustProxies(): void
+    {
+        $proxies = config('security.trusted_proxies');
+
+        if ($proxies) {
+            TrustProxies::at(in_array($proxies, ['*', '**'], true) ? $proxies : array_map('trim', explode(',', $proxies)));
+        }
     }
 
     private function configureRateLimiting(): void
     {
+        // Account creation is open, so cap it per IP address. Generous, because many people on a mobile
+        // network can share one address.
+        RateLimiter::for('register', fn (Request $request) => Limit::perHour(config('security.register_rate_limit_per_hour'))->by($request->ip()));
+
+        // Backstop against floods from one signed-in client; the per-action limiters below are stricter.
+        RateLimiter::for('api-general', fn (Request $request) => Limit::perMinute(config('security.api_rate_limit_per_minute'))->by($request->user()?->id ?: $request->ip()));
+
         // 5 attempts per minute per email + IP combination.
         RateLimiter::for('login', fn (Request $request) => Limit::perMinute(5)->by(
             Str::lower((string) $request->input('email')).'|'.$request->ip()
@@ -53,6 +82,9 @@ class AppServiceProvider extends ServiceProvider
         // Registering a device is rare. Together with the per-user device cap this bounds how much
         // key material one account can park on the server.
         RateLimiter::for('devices', fn (Request $request) => Limit::perHour(20)->by($request->user()?->id ?: $request->ip()));
+
+        // A browser subscribes once; this only stops a script from filling the table.
+        RateLimiter::for('push-subscriptions', fn (Request $request) => Limit::perHour(30)->by($request->user()?->id ?: $request->ip()));
 
         // Every key-bundle fetch uses up one-time prekeys, so it is limited per requester per target
         // to stop anyone draining a person's prekeys. Runs before route-model binding: the user is an id.

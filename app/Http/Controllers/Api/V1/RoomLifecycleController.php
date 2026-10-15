@@ -16,21 +16,21 @@ class RoomLifecycleController extends Controller
 
     public function lock(Request $request, Room $room, SetRoomLock $action): RoomResource
     {
-        $action->handle($room, true);
+        $action->handle($room, true, $request->user());
 
         return new RoomResource($this->rooms->find($request->user(), $room));
     }
 
     public function unlock(Request $request, Room $room, SetRoomLock $action): RoomResource
     {
-        $action->handle($room, false);
+        $action->handle($room, false, $request->user());
 
         return new RoomResource($this->rooms->find($request->user(), $room));
     }
 
     public function end(Request $request, Room $room, EndRoom $action): RoomResource
     {
-        $action->handle($room);
+        $action->handle($room, $request->user());
 
         return new RoomResource($this->rooms->find($request->user(), $room));
     }

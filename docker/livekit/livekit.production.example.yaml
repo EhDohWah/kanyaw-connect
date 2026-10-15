@@ -1,0 +1,36 @@
+# LiveKit server config for PRODUCTION: an example to copy and adapt, NOT the file docker-compose uses
+# (that is livekit.yaml, for development).
+#
+# It has not been run against a real deployment. Check every option against LiveKit's current
+# documentation (https://docs.livekit.io/home/self-hosting/deployment/) before relying on it.
+#
+# Replace everything in UPPER CASE or marked "example.org".
+port: 7880            # signalling; put nginx/Caddy with TLS in front, so clients use wss://livekit.example.org
+log_level: info
+
+rtc:
+  tcp_port: 7881                # WebRTC over TCP (fallback when UDP is blocked)
+  port_range_start: 50000       # WebRTC media over UDP: open this whole range in the firewall
+  port_range_end: 60000
+  use_external_ip: true         # advertise the server's public address
+
+# Must match LIVEKIT_API_KEY / LIVEKIT_API_SECRET in the API's .env. Use a long random secret.
+keys:
+  YOUR_API_KEY: YOUR_LONG_RANDOM_SECRET
+
+# TURN relays media for people behind strict mobile or office firewalls. LiveKit has it built in,
+# so no separate coturn server is needed.
+turn:
+  enabled: true
+  domain: turn.example.org      # a DNS name that points at this server
+  cert_file: /certs/fullchain.pem
+  key_file: /certs/privkey.pem
+  tls_port: 5349                # TURN over TLS (tcp). Open it in the firewall.
+  udp_port: 3478                # TURN over UDP. Open it in the firewall.
+
+# LiveKit reports who joined and left to the API. This is how a room becomes active, how seats are
+# freed and how the host role moves, so it must work. The API URL must be reachable from this server.
+webhook:
+  api_key: YOUR_API_KEY
+  urls:
+    - https://api.example.org/api/v1/webhooks/livekit
