@@ -21,35 +21,47 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
-        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
-        <env name="BCRYPT_ROUNDS" value="4"/>
-        <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="LIVEKIT_URL" value="ws://livekit.test:7880"/>
-        <env name="LIVEKIT_HOST" value="http://livekit.test:7880"/>
-        <env name="LIVEKIT_API_KEY" value="test-api-key"/>
-        <env name="LIVEKIT_API_SECRET" value="test-api-secret-test-api-secret-0123456789"/>
-        <env name="LIVEKIT_TOKEN_TTL" value="3600"/>
-        <env name="ROOM_HOST_TRANSFER_GRACE" value="0"/>
-        <env name="REVERB_APP_ID" value="100001"/>
-        <env name="REVERB_APP_KEY" value="test-key"/>
-        <env name="REVERB_APP_SECRET" value="test-secret"/>
-        <env name="REVERB_HOST" value="localhost"/>
-        <env name="REVERB_PORT" value="8080"/>
-        <env name="REVERB_SCHEME" value="http"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
+        <!--
+            These values must win over variables that are already set in the shell or in a Docker
+            container. Without that, a container that has the development DB_DATABASE would run the
+            tests against the development database, and RefreshDatabase would wipe it.
+
+            They are <server> entries, not <env> entries, on purpose: Laravel reads $_SERVER before
+            $_ENV, and a real environment variable lives in $_SERVER, so only <server force="true">
+            can override it.
+
+            Only where the database is (host, port, user, password) is left to the environment,
+            because that differs between a laptop, CI and Docker.
+        -->
+        <server name="APP_ENV" value="testing" force="true"/>
+        <server name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <server name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <server name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <server name="LIVEKIT_URL" value="ws://livekit.test:7880" force="true"/>
+        <server name="LIVEKIT_HOST" value="http://livekit.test:7880" force="true"/>
+        <server name="LIVEKIT_API_KEY" value="test-api-key" force="true"/>
+        <server name="LIVEKIT_API_SECRET" value="test-api-secret-test-api-secret-0123456789" force="true"/>
+        <server name="LIVEKIT_TOKEN_TTL" value="3600" force="true"/>
+        <server name="ROOM_HOST_TRANSFER_GRACE" value="0" force="true"/>
+        <server name="REVERB_APP_ID" value="100001" force="true"/>
+        <server name="REVERB_APP_KEY" value="test-key" force="true"/>
+        <server name="REVERB_APP_SECRET" value="test-secret" force="true"/>
+        <server name="REVERB_HOST" value="localhost" force="true"/>
+        <server name="REVERB_PORT" value="8080" force="true"/>
+        <server name="REVERB_SCHEME" value="http" force="true"/>
+        <server name="CACHE_STORE" value="array" force="true"/>
+        <server name="DB_CONNECTION" value="pgsql" force="true"/>
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="5432"/>
-        <env name="DB_DATABASE" value="kanyaw_connect_test"/>
+        <server name="DB_DATABASE" value="kanyaw_connect_test" force="true"/>
         <env name="DB_USERNAME" value="kanyaw"/>
         <env name="DB_PASSWORD" value="secret"/>
-        <env name="DB_URL" value=""/>
-        <env name="MAIL_MAILER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
-        <env name="PULSE_ENABLED" value="false"/>
-        <env name="TELESCOPE_ENABLED" value="false"/>
-        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <server name="DB_URL" value="" force="true"/>
+        <server name="MAIL_MAILER" value="array" force="true"/>
+        <server name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <server name="SESSION_DRIVER" value="array" force="true"/>
+        <server name="PULSE_ENABLED" value="false" force="true"/>
+        <server name="TELESCOPE_ENABLED" value="false" force="true"/>
+        <server name="NIGHTWATCH_ENABLED" value="false" force="true"/>
     </php>
 </phpunit>

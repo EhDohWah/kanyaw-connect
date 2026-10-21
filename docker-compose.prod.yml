@@ -1,0 +1,103 @@
+# Production settings, added on top of docker-compose.yml:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What changes compared with the development stack:
+#   - the production image: no test tools, code that cannot change, settings cached
+#   - no demo data, no debug output, and no built-in keys: every secret below MUST be set in .env
+#     (compose stops with a message naming the missing one)
+#   - PostgreSQL and Redis are not published on the host at all
+#   - the web server gets HTTPS by itself for the domain in SERVER_NAME (certificate requested and
+#     renewed automatically; ports 80 and 443 must be reachable from the internet). Live updates
+#     (Reverb) are served through the same address: wss://<SERVER_NAME>/app/<REVERB_APP_KEY>
+#   - LiveKit runs on the host's network, with the config file you write (see below). The web server
+#     serves it over HTTPS on LIVEKIT_DOMAIN, so LIVEKIT_URL is wss://<LIVEKIT_DOMAIN>
+#
+# LiveKit needs a file of its own for production (public address, TLS, TURN):
+#     cp docker/livekit/livekit.production.example.yaml docker/livekit/livekit.production.yaml
+# and fill it in. It holds your secret, so git ignores it.
+
+x-php-prod-environment: &php-prod-environment
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_KEY: "${APP_KEY:?Set APP_KEY in .env to base64: followed by the output of openssl rand -base64 32}"
+  APP_URL: "${APP_URL:?Set APP_URL in .env, for example https://api.example.org}"
+  FRONTEND_URL: "${FRONTEND_URL:?Set FRONTEND_URL in .env to the address of your frontend, for example https://chat.example.org}"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DB_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env (a long random password)}"
+  REVERB_APP_ID: "${REVERB_APP_ID:?Set REVERB_APP_ID in .env}"
+  REVERB_APP_KEY: "${REVERB_APP_KEY:?Set REVERB_APP_KEY in .env}"
+  REVERB_APP_SECRET: "${REVERB_APP_SECRET:?Set REVERB_APP_SECRET in .env (a long random secret)}"
+  REVERB_ALLOWED_ORIGINS: "${REVERB_ALLOWED_ORIGINS:?Set REVERB_ALLOWED_ORIGINS in .env to the host name of your frontend, for example chat.example.org (a host name only, no https:// and no port)}"
+  LIVEKIT_URL: "${LIVEKIT_URL:?Set LIVEKIT_URL in .env, for example wss://livekit.example.org}"
+  LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in .env (the same key as in your LiveKit config)}"
+  LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in .env (the same secret as in your LiveKit config)}"
+  # LiveKit runs on the host's network, so the containers reach it through the host.
+  LIVEKIT_HOST: http://host.docker.internal:7880
+
+x-php-prod: &php-prod
+  image: kanyaw-connect:prod
+  build:
+    target: production
+  environment: *php-prod-environment
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  logging: &prod-logging
+    # Keep the logs from filling the disk.
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env (a long random password)}"
+    ports: !reset []
+    logging: *prod-logging
+
+  redis:
+    ports: !reset []
+    logging: *prod-logging
+
+  migrate:
+    <<: *php-prod
+    environment:
+      <<: *php-prod-environment
+      SEED_DEMO_DATA: "false"
+
+  app:
+    <<: *php-prod
+    environment:
+      <<: *php-prod-environment
+      SERVER_NAME: "${SERVER_NAME:?Set SERVER_NAME in .env to your domain, for example api.example.org}"
+      # Browsers need wss:// for video, so the web server also serves the LiveKit domain over HTTPS
+      # (certificate included) and passes the traffic on to LiveKit on the host.
+      CADDY_EXTRA_CONFIG: |
+        ${LIVEKIT_DOMAIN:?Set LIVEKIT_DOMAIN in .env to the domain of your video server, for example livekit.example.org} {
+            reverse_proxy host.docker.internal:7880
+        }
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+
+  reverb:
+    <<: *php-prod
+    # Reached through the web server (/app), not directly.
+    ports: !reset []
+
+  queue:
+    <<: *php-prod
+
+  scheduler:
+    <<: *php-prod
+
+  livekit:
+    network_mode: host
+    ports: !reset []
+    environment: !reset {}
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./docker/livekit/livekit.production.yaml:/etc/livekit.yaml:ro
+    logging: *prod-logging

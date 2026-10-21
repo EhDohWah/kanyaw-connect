@@ -62,3 +62,81 @@ jobs:
 
       - name: Execute tests
         run: ./vendor/bin/pest
+
+  # Builds the Docker images exactly as someone running `docker compose up` would, starts the whole stack
+  # and tests it from the outside. It also runs the test suite inside the container.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the development image
+        run: docker compose build
+
+      - name: Build the production image
+        run: docker build --target production --tag kanyaw-connect:prod .
+
+      - name: The production compose file asks for its secrets, and parses once they are given
+        run: |
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2> prod-error.txt; then
+            echo "Compose should have refused to start without secrets"; exit 1
+          fi
+          grep -q "APP_KEY" prod-error.txt
+
+          APP_KEY=base64:x APP_URL=https://api.example.org FRONTEND_URL=https://chat.example.org DB_PASSWORD=x \
+          REVERB_APP_ID=1 REVERB_APP_KEY=x REVERB_APP_SECRET=x REVERB_ALLOWED_ORIGINS=chat.example.org \
+          LIVEKIT_URL=wss://livekit.example.org LIVEKIT_API_KEY=x LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
+          SERVER_NAME=api.example.org LIVEKIT_DOMAIN=livekit.example.org \
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+
+      - name: The images refuse unsafe set-ups
+        run: |
+          refuses() { if "$@" > /dev/null 2>&1; then echo "Should have refused: $*"; exit 1; fi; }
+          refuses docker run --rm -e APP_ENV=production -e APP_KEY=base64:x kanyaw-connect:dev true
+          refuses docker run --rm -e APP_KEY= kanyaw-connect:prod true
+          refuses docker run --rm -e SEED_DEMO_DATA=true -e APP_KEY=base64:x kanyaw-connect:prod bootstrap-db.sh
+
+      - name: The production image has no test tools
+        run: |
+          docker run --rm --entrypoint sh kanyaw-connect:prod -c '
+            test ! -d vendor/pestphp && test ! -d vendor/phpunit && test ! -d tests && test ! -f .docker-development && test "$(id -u)" != 0'
+
+      - name: Start the stack
+        run: docker compose up -d --wait --wait-timeout 240
+
+      - name: Smoke test from outside
+        run: |
+          curl -fsS http://localhost:8000/up
+          token=$(curl -fsS -X POST http://localhost:8000/api/v1/auth/login \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -d '{"email":"user1@example.com","password":"password","device_name":"ci"}' | jq -r .token)
+          test -n "$token" && test "$token" != null
+          curl -fsS http://localhost:8000/api/v1/chats -H "Authorization: Bearer $token" -H 'Accept: application/json' \
+            | jq -e '.data | length >= 3'
+
+          # Reverb answers on its own port, and a websocket upgrade works through the web server.
+          curl -fsS http://localhost:8080/up
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' 'http://localhost:8000/app/local-dev-key' || true)
+          test "$status" = 101
+
+          # LiveKit is up, and the background services are running.
+          curl -fsS http://localhost:7880/ > /dev/null
+          running=$(docker compose ps --status running --services)
+          for service in app reverb queue scheduler livekit postgres redis; do echo "$running" | grep -qx "$service"; done
+
+          # The server does not announce its software.
+          curl -sI http://localhost:8000/up | grep -qi '^server:' && { echo "Server header is present"; exit 1; } || true
+
+      - name: Run the test suite inside the container
+        run: docker compose run --rm test
+
+      - name: Logs (only when something failed)
+        if: failure()
+        run: docker compose logs --no-color --tail 100

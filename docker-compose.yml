@@ -1,19 +1,86 @@
-# Local development infrastructure. Laravel, Reverb and the queue worker run on the host via artisan.
+# The whole app with one command:
+#
+#     docker compose up -d --build
+#
+# Services:  postgres, redis       data
+#            migrate               runs once: updates the database (and adds demo people if it is empty)
+#            app                   the API, http://localhost:8000
+#            reverb                live updates (websockets), ws://localhost:8080
+#            queue                 sends the live events and push notifications in the background
+#            scheduler             runs the clean-up jobs and marks people offline
+#            livekit               video calls
+#            test                  only when asked for: docker compose run --rm test
+#
+# Settings: copy .env.example to .env and change what you need. Every setting has a working default,
+# so the file is optional. The README explains all of them.
+name: kanyaw-connect
+
+x-php: &php
+  image: kanyaw-connect:dev
+  build:
+    context: .
+    target: development
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &php-environment
+    # How the containers find each other. These always win over the same names in .env, because
+    # .env is usually written for running the app directly on your own machine (DB_HOST=127.0.0.1).
+    APP_NAME: ${APP_NAME:-Karen Connect}
+    # A public key so that the stack starts with no setup. It is only used when APP_KEY in .env is
+    # missing or empty. Never run a real server with it: docker-compose.prod.yml requires your own.
+    APP_KEY: &dev-app-key ${APP_KEY:-base64:6yLKxj44xO5HmzNTs0jgCq8yX0tqY7KRfRalAtOvSK0=}
+    APP_DEBUG: ${APP_DEBUG:-true}
+    APP_URL: ${APP_URL:-http://localhost:8000}
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_DATABASE: ${DB_DATABASE:-kanyaw_connect}
+    DB_USERNAME: ${DB_USERNAME:-kanyaw}
+    DB_PASSWORD: ${DB_PASSWORD:-secret}
+    REDIS_CLIENT: phpredis
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    REDIS_PASSWORD: "null"
+    CACHE_STORE: redis
+    QUEUE_CONNECTION: redis
+    SESSION_DRIVER: array
+    BROADCAST_CONNECTION: reverb
+    # Laravel hands live events to the Reverb container. Browsers connect to the published port
+    # instead: REVERB_PORT in .env is the port on your machine.
+    REVERB_HOST: reverb
+    REVERB_PORT: "8080"
+    REVERB_SCHEME: http
+    REVERB_SERVER_HOST: 0.0.0.0
+    REVERB_SERVER_PORT: "8080"
+    REVERB_APP_ID: ${REVERB_APP_ID:-100001}
+    REVERB_APP_KEY: ${REVERB_APP_KEY:-local-dev-key}
+    REVERB_APP_SECRET: ${REVERB_APP_SECRET:-local-dev-secret}
+    # LIVEKIT_URL is what browsers connect to. LIVEKIT_HOST is how this server reaches LiveKit.
+    LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}
+    LIVEKIT_HOST: http://livekit:7880
+    LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+    LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret-secret-secret-secret-secret-secret}
+    # Logs go to `docker compose logs`.
+    LOG_CHANNEL: stderr
+
 services:
   postgres:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: kanyaw
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: kanyaw_connect
+      POSTGRES_DB: ${DB_DATABASE:-kanyaw_connect}
+      POSTGRES_USER: ${DB_USERNAME:-kanyaw}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
     ports:
-      - "5432:5432"
+      # Only reachable from your own machine (for a database tool such as DBeaver or TablePlus).
+      - "127.0.0.1:${FORWARD_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+      - ./docker/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kanyaw -d kanyaw_connect"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,8 +88,10 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
+    # Write to disk as it goes, so waiting background jobs survive a restart.
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${FORWARD_REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -31,20 +100,136 @@ services:
       timeout: 5s
       retries: 10
 
-  livekit:
-    image: livekit/livekit-server:latest
-    restart: unless-stopped
-    command: --config /etc/livekit.yaml
-    extra_hosts:
-      # lets the container reach the API running on the host (needed on Linux; built in on Docker Desktop)
-      - "host.docker.internal:host-gateway"
+  # Runs once and stops. The services below wait for it to finish.
+  migrate:
+    <<: *php
+    restart: "no"
+    command: ["bootstrap-db.sh"]
+    environment:
+      <<: *php-environment
+      # Add demo people and chats to an EMPTY database (user1@example.com ... user5@example.com,
+      # password "password"). Set to false in .env to start with nothing.
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    <<: *php
     ports:
-      - "7880:7880"          # HTTP / WebSocket signalling
-      - "7881:7881"          # WebRTC over TCP (fallback)
-      - "50000-50100:50000-50100/udp"   # WebRTC media (keep in sync with livekit.yaml)
+      - "${APP_PORT:-8000}:80"
     volumes:
-      - ./docker/livekit/livekit.yaml:/etc/livekit.yaml:ro
+      - storage:/app/storage
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  reverb:
+    <<: *php
+    command: ["php", "artisan", "reverb:start"]
+    ports:
+      - "${REVERB_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  queue:
+    <<: *php
+    # Starts over every hour, so a long-running worker cannot slowly fill its memory.
+    command: ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--max-time=3600"]
+    stop_grace_period: 60s
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    <<: *php
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  livekit:
+    image: livekit/livekit-server:v1.13.10
+    restart: unless-stopped
+    extra_hosts:
+      # Only needed when the app runs on your machine instead of in Docker (see LIVEKIT_WEBHOOK_URL in the README).
+      - "host.docker.internal:host-gateway"
+    environment:
+      # LiveKit's whole configuration, written here instead of in a file so that its key and secret
+      # come from the same place as the app's (LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env).
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
+          # The address browsers are told to send media to. 127.0.0.1 works for a browser on this
+          # machine. For a phone on your network, use this machine's address on that network.
+          node_ip: ${LIVEKIT_NODE_IP:-127.0.0.1}
+        keys:
+          ${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret-secret-secret-secret-secret-secret}
+        # LiveKit tells the API who joined and left. This is how a room becomes active and how seats are freed.
+        webhook:
+          api_key: ${LIVEKIT_API_KEY:-devkey}
+          urls:
+            - ${LIVEKIT_WEBHOOK_URL:-http://app/api/v1/webhooks/livekit}
+    ports:
+      - "7880:7880"        # signalling (websocket)
+      - "7881:7881"        # media over TCP, for networks that block UDP
+      - "7882:7882/udp"    # media over UDP: every call goes through this one port
+
+  # Not started by `up`. Run the tests with:  docker compose run --rm test
+  # It has no env_file on purpose: the tests must not pick up your own settings. They use their own
+  # database (kanyaw_connect_test), never the one the app uses.
+  test:
+    image: kanyaw-connect:dev
+    build:
+      context: .
+      target: development
+    profiles: ["test"]
+    restart: "no"
+    command: ["./vendor/bin/pest"]
+    environment:
+      APP_KEY: *dev-app-key
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USERNAME: ${DB_USERNAME:-kanyaw}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres-data:
   redis-data:
+  storage:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,27 @@
+# What is kept out of the build. Anything listed here is never copied into an image.
+
+# Secrets and machine-specific settings. Settings reach the containers at run time, not through the image.
+.env
+.env.*
+!.env.example
+
+# Version control and editors
+.git
+.idea
+.vscode
+.phpunit.cache
+.phpunit.result.cache
+
+# Installed inside the image by Composer
+vendor
+node_modules
+
+# State that belongs in volumes, not in an image. The Dockerfile creates the empty folders.
+storage
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+public/storage
+public/hot
+public/build
+*.log
+dump.rdb

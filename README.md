@@ -13,15 +13,19 @@ This repository is the API only. The frontend is a separate Vue 3 project that t
 | WebSockets | Laravel Reverb |
 | Video | LiveKit (self-hosted), via `agence104/livekit-server-sdk` |
 | Push notifications | Web Push (VAPID), via `minishlink/web-push` |
+| Web server | FrankenPHP (Caddy with PHP built in) |
 | Tests, style | Pest, Laravel Pint |
 
 **What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · web push notifications · a room audit log · scheduled clean-up.
 
 ## Contents
 
-- [Quick start](#quick-start)
-- [Processes the app needs](#processes-the-app-needs)
-- [Docker](#docker)
+- [Quick start with Docker](#quick-start-with-docker)
+- [Using the Docker stack](#using-the-docker-stack)
+- [What runs in Docker](#what-runs-in-docker)
+- [Docker settings](#docker-settings)
+- [Using it from another device](#using-it-from-another-device)
+- [Running without Docker](#running-without-docker)
 - [Configuration](#configuration)
 - [Scheduled jobs](#scheduled-jobs)
 - [LiveKit and TURN](#livekit-and-turn)
@@ -29,78 +33,154 @@ This repository is the API only. The frontend is a separate Vue 3 project that t
 - [End-to-end encryption](#end-to-end-encryption)
 - [Security](#security)
 - [Tests and code style](#tests-and-code-style)
+- [Deploying with Docker](#deploying-with-docker)
 - [Deployment checklist](#deployment-checklist)
 - [Project layout](#project-layout)
 - [Troubleshooting](#troubleshooting)
 
-## Quick start
+## Quick start with Docker
 
-You need PHP 8.3+ with the extensions `bcmath`, `curl`, `gd`, `intl`, `mbstring`, `openssl`, `pcntl`, `pdo_pgsql`, `redis`, `sodium`, `zip` (Composer checks the required ones), Composer, PostgreSQL 16 and Redis. The easiest way to get the databases is Docker (below), but locally installed ones work as well.
+You need [Docker](https://docs.docker.com/get-docker/) with Compose **2.24 or newer** (Docker Desktop 4.27+ on Windows and macOS, or Docker Engine with the Compose plugin on Linux). Check with `docker compose version`. Nothing else: PHP, PostgreSQL, Redis, LiveKit and Composer all live in the containers.
+
+From the project folder:
 
 ```bash
-cp .env.example .env
-docker compose up -d postgres redis      # or use your own Postgres 16 + Redis
-composer install
-php artisan key:generate
-php artisan migrate:fresh --seed         # sample data, see below
-php artisan storage:link                 # serves uploaded avatars from /storage
-php artisan serve                        # http://localhost:8000
+docker compose up -d --build
 ```
 
-`migrate:fresh --seed` creates five users (`user1@example.com` … `user5@example.com`, all with the password `password`), two direct chats with a few messages, one group chat and one scheduled video room. **Never run it on a database that holds real data:** `migrate:fresh` drops every table.
+The first run builds the image, which takes several minutes (it compiles PHP extensions and downloads the packages). After that, starting everything takes about 15 seconds. It starts eight containers, creates the database, runs the migrations and adds demo people and chats.
 
-Check it works:
+Check that it works:
 
 ```bash
+docker compose ps                  # every service "running" or "healthy"; migrate has "exited (0)", which is correct
+curl localhost:8000/up             # the API answers
 curl -s localhost:8000/api/v1/auth/login -H 'Accept: application/json' -H 'Content-Type: application/json' \
   -d '{"email":"user1@example.com","password":"password","device_name":"curl"}'
 ```
 
-The same account can then call, for example, `GET /api/v1/chats` with `Authorization: Bearer <token>`.
+In Windows PowerShell, `curl` is another command; use this instead:
 
-## Processes the app needs
-
-`php artisan serve` alone gives you the REST API. Everything real-time or scheduled needs its own process; in production each runs under a process manager (see the [checklist](#deployment-checklist)).
-
-| Process | Command | Without it |
-|---|---|---|
-| Web server | `php artisan serve` (development) · PHP-FPM + nginx (production) | No API |
-| Queue worker | `php artisan queue:work` | Real-time events are never published, no push notifications, no thumbnails, no delayed host transfer |
-| Reverb (WebSockets) | `php artisan reverb:start` (port 8080) | No real-time updates; the REST API still works |
-| Scheduler | `php artisan schedule:work` (development) · one cron line `* * * * * php artisan schedule:run` (production) | Users never go offline, clean-up never runs |
-| LiveKit | `docker compose up -d livekit` | Nobody can join a video room (`503`) |
-
-Leave `REDIS_QUEUE_BLOCK_FOR` at its default so the worker picks up events immediately instead of polling every few seconds.
-
-## Docker
-
-`docker-compose.yml` starts the infrastructure for local development. Laravel, Reverb and the queue worker run on your machine via `artisan`.
-
-| Service | Image | Ports | Notes |
-|---|---|---|---|
-| `postgres` | `postgres:16` | 5432 | Database `kanyaw_connect` (user `kanyaw`, password `secret`). A second database, `kanyaw_connect_test`, is created for the test suite. Data lives in the `postgres-data` volume. |
-| `redis` | `redis:7` | 6379 | Cache, queues, presence. Volume `redis-data`. |
-| `livekit` | `livekit/livekit-server` | 7880 (signalling), 7881/tcp, 50000–50100/udp | Configured by `docker/livekit/livekit.yaml` (development key and secret, webhook to `host.docker.internal:8000`). |
-
-```bash
-docker compose up -d            # everything
-docker compose up -d postgres redis
-docker compose down             # stop (data stays); add -v to delete the volumes too
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/auth/login -ContentType 'application/json' `
+  -Body '{"email":"user1@example.com","password":"password","device_name":"powershell"}'
 ```
 
-The compose file is for development. It has not been run in the environment this code was built in (there is no Docker daemon there); the LiveKit and database behaviour were verified against locally started servers instead. For production see [LiveKit and TURN](#livekit-and-turn) and the [checklist](#deployment-checklist).
+The answer contains a token. Send it as `Authorization: Bearer <token>`, for example to `GET /api/v1/chats`.
+
+**Demo accounts:** `user1@example.com` … `user5@example.com`, all with the password `password`. They come with two direct chats, a group chat with a few messages, and one scheduled video room. The demo data is only added to an *empty* database, never twice.
+
+**What the frontend needs** (everything is on your own machine):
+
+| Setting | Value |
+|---|---|
+| API base URL | `http://localhost:8000/api/v1` |
+| Live updates (Reverb) | `VITE_REVERB_APP_KEY=local-dev-key`, `VITE_REVERB_HOST=localhost`, `VITE_REVERB_PORT=8080`, `VITE_REVERB_SCHEME=http` (names as in [docs/API.md, section 4.1](docs/API.md#41-connecting)). The same websocket also answers on port `8000`. |
+| Video (LiveKit) | nothing to configure: the address comes back when joining a room (`livekit_url`, `ws://localhost:7880`) |
+
+On a deployed server the websocket goes through the API's own address, so the frontend uses `VITE_REVERB_HOST=api.example.org`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`.
+
+## Using the Docker stack
+
+```bash
+docker compose up -d --build        # start everything; also use this after you change code or pull new code
+docker compose ps                   # what is running
+docker compose logs -f app queue    # follow the logs of some services (all if you name none)
+docker compose exec app php artisan route:list     # run any artisan command
+docker compose exec app php artisan tinker
+docker compose run --rm test        # run the test suite (uses its own database, see below)
+docker compose exec postgres psql -U kanyaw kanyaw_connect     # a SQL prompt
+docker compose down                 # stop everything; the data stays
+docker compose down -v              # stop AND delete all data: database, Redis, uploaded files (a fresh start, with new demo data)
+```
+
+- **The code is inside the image.** After you edit PHP files run `docker compose up -d --build`. Only the last layers are rebuilt, so it takes seconds, and containers whose image changed are replaced.
+- **To put the demo data back** without deleting the volumes: `docker compose exec app php artisan migrate:fresh --seed --force`. This empties the development database.
+- **Logs** of the application go to `docker compose logs`, not to a file. The web server writes no access log, on purpose: signed attachment links contain a secret.
+- **Running the tests inside Docker cannot touch your data.** `phpunit.xml` forces the separate `kanyaw_connect_test` database, and `tests/TestCase.php` stops the run if the database name does not end in `_test`.
+- **Where the data lives:** named volumes `postgres-data`, `redis-data`, `storage` (uploaded files) and `caddy-data`. They survive `docker compose down` and rebuilds.
+
+## What runs in Docker
+
+One image (`Dockerfile`) is used for every PHP part of the app. A container's job is only the command it runs.
+
+| Service | What it is | Address on your machine | Without it |
+|---|---|---|---|
+| `postgres` | PostgreSQL 16 | `127.0.0.1:5432` (only this machine) | Nothing works |
+| `redis` | Redis 7: cache, queues, presence | `127.0.0.1:6379` (only this machine) | Nothing works |
+| `migrate` | Runs once: migrations, and demo data in an empty database | none | The other services wait for it |
+| `app` | The API (FrankenPHP: Caddy with PHP) | `http://localhost:8000` | No API |
+| `reverb` | Real-time updates (websockets) | `ws://localhost:8080` and `ws://localhost:8000/app/...` | No live updates; the REST API still works |
+| `queue` | Queue worker: publishes live events, sends push notifications, makes thumbnails | none | Live events never arrive, no push, no thumbnails |
+| `scheduler` | Runs the [scheduled jobs](#scheduled-jobs) every minute | none | Users never go offline, clean-up never runs |
+| `livekit` | Video (WebRTC) | `ws://localhost:7880`, `7881/tcp`, `7882/udp` | Nobody can join a video room (`503`) |
+| `test` | The test suite; only started by `docker compose run --rm test` | none | |
+
+The websocket is reachable at two addresses, with the same result: directly on Reverb's port (`ws://localhost:8080/app/<key>`) and through the API's web server (`ws://localhost:8000/app/<key>`). The second one means a deployed frontend needs only one domain and one certificate.
+
+Leave `REDIS_QUEUE_BLOCK_FOR` at its default so the queue worker picks up events immediately instead of polling every few seconds.
+
+## Docker settings
+
+Everything has a working default, so **no `.env` file is needed**. To change something, copy `.env.example` to `.env` (next to `docker-compose.yml`) and edit it; run `docker compose up -d` afterwards. Any setting from [Configuration](#configuration) can go in it.
+
+The containers find each other by name, so a few settings are fixed by `docker-compose.yml` and a `.env` written for running on your own machine (`DB_HOST=127.0.0.1`) does not break anything: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `REDIS_*`, `CACHE_STORE`, `QUEUE_CONNECTION`, `SESSION_DRIVER`, `BROADCAST_CONNECTION`, `REVERB_HOST`, `REVERB_SCHEME`, `REVERB_SERVER_*`, `LIVEKIT_HOST` and `LOG_CHANNEL` are ignored in `.env`.
+
+These settings are read by Docker only:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `APP_PORT` | `8000` | Port of the API on your machine |
+| `REVERB_PORT` | `8080` | Port of Reverb on your machine (the frontend connects to it) |
+| `FORWARD_DB_PORT`, `FORWARD_REDIS_PORT` | `5432`, `6379` | Ports of PostgreSQL and Redis on your machine. Change one if your own database already uses it ("port is already allocated"). |
+| `SEED_DEMO_DATA` | `true` | Add the demo people and chats to an **empty** database. `false` to start with nothing. |
+| `LIVEKIT_NODE_IP` | `127.0.0.1` | The address browsers send video to. See [Using it from another device](#using-it-from-another-device). |
+| `LIVEKIT_WEBHOOK_URL` | `http://app/api/v1/webhooks/livekit` | Where LiveKit reports who joined and left. Only change it when the app runs outside Docker. |
+| `SERVER_NAME` | `:80` | Production only: the domain name. See [Deploying with Docker](#deploying-with-docker). |
+| `LIVEKIT_DOMAIN` | | Production only: the domain name of the video server. |
+
+`DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD` also create the database, so **changing `DB_PASSWORD` after the first start has no effect** on the existing data volume: the old password stays. Either use `docker compose down -v` (deletes the data) or change it inside the database too.
+
+LiveKit's key and secret (`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`) come from the same place for the API and for LiveKit, so there is nothing to keep in step.
+
+## Using it from another device
+
+By default everything is built for a browser on the same machine (`localhost`). To use a phone or another computer on your network:
+
+1. Find this machine's address on that network, for example `192.168.1.20`.
+2. In `.env`: `APP_URL=http://192.168.1.20:8000`, `LIVEKIT_URL=ws://192.168.1.20:7880`, `LIVEKIT_NODE_IP=192.168.1.20`, and `CORS_ALLOWED_ORIGINS` set to the address the frontend is opened at.
+3. `docker compose up -d`, and allow ports `8000`, `8080`, `7880`, `7881/tcp` and `7882/udp` through this machine's firewall.
+
+Browsers only allow the camera and microphone on pages served over `https://` (or `localhost`), so a *video call* from a phone needs HTTPS, which means a real deployment (see [Deploying with Docker](#deploying-with-docker)). Chat works over plain `http://`.
+
+## Running without Docker
+
+Docker is the supported way. If you prefer to run PHP on your own machine you need PHP 8.3+ with the extensions `bcmath`, `curl`, `exif`, `gd`, `intl`, `mbstring`, `openssl`, `pcntl`, `pdo_pgsql`, `redis`, `sodium`, `zip`, Composer, PostgreSQL 16 and Redis. You can still use Docker for the databases and LiveKit:
+
+```bash
+cp .env.example .env
+docker compose up -d postgres redis livekit     # or use your own Postgres 16 + Redis
+composer install
+php artisan key:generate
+php artisan migrate:fresh --seed                # demo data. NEVER on a database with real data: it drops every table.
+php artisan serve                               # http://localhost:8000
+```
+
+Then, each in its own terminal: `php artisan queue:work`, `php artisan reverb:start`, `php artisan schedule:work`. If LiveKit runs in Docker and the app on your machine, set `LIVEKIT_WEBHOOK_URL=http://host.docker.internal:8000/api/v1/webhooks/livekit` in `.env` before starting it. In production the queue worker, Reverb and the scheduler run under a process manager (see the [checklist](#deployment-checklist)).
 
 ## Configuration
 
-Settings come from environment variables (`.env`). Run `php artisan config:cache` in production: nothing in the code reads `env()` outside the `config/` files, so caching is safe. `.env.example` lists everything with development defaults.
+Settings come from environment variables (`.env`). In production the Docker image reads them once at start (`config:cache`): nothing in the code reads `env()` outside the `config/` files, so this is safe. `.env.example` lists everything with development defaults.
 
 ### Application and database
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_ENV`, `APP_DEBUG` | `local`, `true` | **In production use `production` and `false`.** With debug on, error responses include stack traces and file paths. |
+| `APP_NAME` | `Karen Connect` | Name of the application. Also part of the prefix of cache and Redis keys. |
+| `LOG_LEVEL` | `debug` | Least important message that is logged (`debug`, `info`, `warning`, `error`). The production compose file uses `info`. In Docker the log goes to `docker compose logs`. |
 | `APP_URL` | `http://localhost:8000` | The public URL of the API. Signed attachment URLs are built from it. |
-| `APP_KEY` | | Generate with `php artisan key:generate`. Losing it makes stored push secrets unreadable. |
+| `APP_KEY` | | Generate with `php artisan key:generate` (without Docker) or `openssl rand -base64 32` with `base64:` in front. In Docker, empty means "use the public development key", which is fine on your machine and never on a server. Losing the key makes stored push secrets unreadable. |
 | `FRONTEND_URL` | `http://localhost:5173` | Origin of the Vue frontend. |
 | `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | `127.0.0.1`, `5432`, `kanyaw_connect`, `kanyaw`, `secret` | PostgreSQL |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | `127.0.0.1`, `6379`, `null` | Redis |
@@ -115,7 +195,7 @@ Settings come from environment variables (`.env`). Run `php artisan config:cache
 | `SANCTUM_STATEFUL_DOMAINS` | `localhost:5173` | Only for cookie sessions, which this API does not use. Bearer tokens need nothing. |
 | `SANCTUM_TOKEN_PREFIX` | empty | Optional prefix for new tokens (helps secret scanners find leaked tokens). |
 | `CORS_ALLOWED_ORIGINS` | `FRONTEND_URL` | Browser origins allowed to call the API, comma separated. |
-| `TRUSTED_PROXIES` | empty | Proxies whose `X-Forwarded-*` headers are trusted: `*` or comma separated IPs / CIDRs. **Required behind a reverse proxy or load balancer.** |
+| `TRUSTED_PROXIES` | empty | Proxies whose `X-Forwarded-*` headers are trusted: `*` or comma separated IPs / CIDRs. **Required behind a reverse proxy or load balancer** (not needed with the production Docker setup, whose web server faces the internet itself). |
 | `SECURITY_HSTS` | `true` | Send `Strict-Transport-Security` on HTTPS requests. |
 | `API_RATE_LIMIT` | `300` | Requests per minute per signed-in user (flood backstop). |
 | `REGISTER_RATE_LIMIT` | `20` | Sign-ups per hour per IP address. |
@@ -126,9 +206,9 @@ Settings come from environment variables (`.env`). Run `php artisan config:cache
 |---|---|---|
 | `BROADCAST_CONNECTION` | `reverb` | |
 | `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` | development values | Credentials of the Reverb application. **Change all three in production.** The key is public (the frontend uses it); the secret is not. |
-| `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME` | `localhost`, `8080`, `http` | Where clients and the API reach Reverb. Production: your public host, `443`, `https`. |
+| `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME` | `localhost`, `8080`, `http` | Where the API reaches Reverb (without Docker). In Docker the API uses `reverb:8080` and these are ignored; `REVERB_PORT` is then the port on your machine. |
 | `REVERB_SERVER_HOST`, `REVERB_SERVER_PORT` | `0.0.0.0`, `8080` | What `reverb:start` listens on. |
-| `REVERB_ALLOWED_ORIGINS` | `*` | Browser origins allowed to open a WebSocket. **Set to the frontend origin in production.** |
+| `REVERB_ALLOWED_ORIGINS` | `*` | **Host names** of the pages allowed to open a WebSocket, comma separated, wildcards allowed: `chat.example.org,*.example.org`. Not URLs: no `https://`, no port. Only the host of the browser's `Origin` is compared. A client that sends no `Origin` (some native apps) is refused unless this is `*`. Set it to your frontend's host in production. |
 | `REVERB_MAX_REQUEST_SIZE` | `100000` | Largest event Reverb accepts, in bytes. 5000 Burmese or Karen characters are about 15 KB in UTF-8, so the library default of 10 KB is too small. |
 
 ### Video (LiveKit) and rooms
@@ -136,8 +216,8 @@ Settings come from environment variables (`.env`). Run `php artisan config:cache
 | Variable | Default | Meaning |
 |---|---|---|
 | `LIVEKIT_URL` | `ws://localhost:7880` | What **clients** connect to (`ws://` or `wss://`). |
-| `LIVEKIT_HOST` | `http://localhost:7880` | What **the API** calls (`http://` or `https://`). Different on purpose: inside a private network it is usually an internal address. |
-| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | development values | Must match the `keys:` entry in LiveKit's config. The secret also signs webhooks. |
+| `LIVEKIT_HOST` | `http://localhost:7880` | What **the API** calls (`http://` or `https://`). Different on purpose: inside a private network it is usually an internal address. In Docker it is set for you. |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | development values | Must match the `keys:` entry in LiveKit's config (Docker development does that for you). The secret also signs webhooks. |
 | `LIVEKIT_TOKEN_TTL` | `3600` | Lifetime of a join token, seconds. |
 | `ROOM_HOST_TRANSFER_GRACE` | `0` | Seconds to wait before handing the host role on when the host's connection drops. A value such as `30` stops a brief mobile drop from costing the host their role. Needs the queue worker. |
 
@@ -166,7 +246,7 @@ Limits that rarely change (group size, page size, device and prekey limits, stal
 
 ## Scheduled jobs
 
-All run through the scheduler (`schedule:work` or the cron line). Times are Thailand time (Asia/Bangkok), so the heavy ones run in the quiet hours.
+All run through the scheduler (the `scheduler` container, or `schedule:work` / a cron line without Docker). Times are Thailand time (Asia/Bangkok), so the heavy ones run in the quiet hours.
 
 | Command | When | What |
 |---|---|---|
@@ -177,17 +257,17 @@ All run through the scheduler (`schedule:work` or the cron line). Times are Thai
 | `sanctum:prune-expired --hours=24` | daily 03:30 | Deletes expired login tokens (and with them the push subscriptions made under them) |
 | `queue:prune-failed --hours=168` | daily 03:40 | Forgets failed jobs older than a week |
 
-Each command can also be run by hand, for example `php artisan messages:purge-deleted`; they print how much they removed and are safe to repeat. The longer jobs use `withoutOverlapping()` (a slow run never overlaps the next) and all but `presence:mark-offline` use `onOneServer()` (two servers do not both run it).
+Each command can also be run by hand, for example `docker compose exec app php artisan messages:purge-deleted`; they print how much they removed and are safe to repeat. The longer jobs use `withoutOverlapping()` (a slow run never overlaps the next) and all but `presence:mark-offline` use `onOneServer()` (two servers do not both run it).
 
 ## LiveKit and TURN
 
 Video runs on a self-hosted [LiveKit](https://livekit.io) server, which handles all WebRTC signalling, SDP and ICE. The API never touches media: it decides who may join and signs a token; the frontend connects to LiveKit with `livekit-client`.
 
-**Development:** `docker compose up -d livekit` uses `docker/livekit/livekit.yaml`. Its key and secret must match `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`.
+**Development:** the `livekit` service in `docker-compose.yml` carries its whole configuration (written from `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and the other settings above). Media goes over the single UDP port `7882`, with `7881/tcp` as the fallback; both are published on your machine.
 
-**The webhook is essential.** LiveKit reports who joined and left to `POST /api/v1/webhooks/livekit`; that is the **only** thing that sets `joined_at` / `left_at`, makes a room active, ends it when everyone has left, and moves the host role. Without it rooms never become active and seats are never freed. The `webhook:` section of LiveKit's config must point at the API, and the API must be reachable from the LiveKit server. The request is signed with the LiveKit secret and is rejected (`401`) otherwise.
+**The webhook is essential.** LiveKit reports who joined and left to `POST /api/v1/webhooks/livekit`; that is the **only** thing that sets `joined_at` / `left_at`, makes a room active, ends it when everyone has left, and moves the host role. Without it rooms never become active and seats are never freed. The `webhook:` section of LiveKit's config must point at the API, and the API must be reachable from the LiveKit server. The request is signed with the LiveKit secret and is rejected (`401`) otherwise. The Docker development stack sets this up (`http://app/api/v1/webhooks/livekit`).
 
-**Production.** LiveKit needs a public address, TLS, and a **TURN server**. TURN relays media for people behind strict mobile or office firewalls, which is common for this audience; without it some calls will not connect. LiveKit has TURN built in, so no separate coturn is needed. A starting point is `docker/livekit/livekit.production.example.yaml` (copy it, fill in your domains and secrets). It has not been run against a real deployment, so check it against LiveKit's current documentation:
+**Production.** LiveKit needs a public address, TLS, and a **TURN server**. TURN relays media for people behind strict mobile or office firewalls, which is common for this audience; without it some calls will not connect. LiveKit has TURN built in, so no separate coturn is needed. `docker-compose.prod.yml` runs LiveKit on the host's network with a config file you write: copy `docker/livekit/livekit.production.example.yaml` to `docker/livekit/livekit.production.yaml` and fill it in. The example has not been run against a real deployment, so check it against LiveKit's current documentation:
 
 ```yaml
 port: 7880
@@ -212,14 +292,14 @@ webhook:
     - https://api.example.org/api/v1/webhooks/livekit
 ```
 
-Open these ports in the firewall: `443` (or your proxy's port) for signalling, `7881/tcp`, `3478/udp`, `5349/tcp` (TURN over TLS), and the UDP range `50000-60000`. Put TLS in front of the signalling port (7880) with nginx or Caddy so that `LIVEKIT_URL` can be `wss://livekit.example.org`; `LIVEKIT_HOST` can stay an internal `http://` address. A room that nobody is in is closed by LiveKit after `rooms.livekit_empty_timeout_seconds` (5 minutes), which the webhook turns into `status: ended`.
+Open these ports in the firewall: `80` and `443` (web server, including `wss://` for video), `7881/tcp`, `3478/udp`, `5349/tcp` (TURN over TLS), and the UDP range `50000-60000`. **Do not open `7880`**: the web server passes `wss://livekit.example.org` on to it. TURN over TLS needs a certificate for the TURN domain; get one with certbot or any other tool and make the files available inside the LiveKit container (add a volume line for it in your own compose override). A room that nobody is in is closed by LiveKit after `rooms.livekit_empty_timeout_seconds` (5 minutes), which the webhook turns into `status: ended`.
 
 ## Web push
 
 Push notifications reach a phone whose app is closed. They need three things: the `VAPID_*` keys, the queue worker, and a frontend that registers a service worker (see section 6 of [docs/API.md](docs/API.md#6-guide-push-notifications)).
 
 ```bash
-php artisan push:vapid        # prints VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT for your .env
+docker compose exec app php artisan push:vapid     # prints VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT for your .env
 ```
 
 Create the pair once and keep it: replacing it signs every browser out of push. Notifications are encrypted for the browser (the push service cannot read them) and only ever contain "New message" for encrypted chats. The server only talks to the well-known push services; a client cannot make it call an arbitrary address (see `PUSH_ALLOWED_HOSTS`).
@@ -236,45 +316,105 @@ What the server can still see is metadata: who is in which chat, who sent a mess
 
 - **Authentication:** bearer tokens that expire after 30 days and are not extended by use; one token per device; logging out revokes only that device. Login is limited to 5 attempts a minute per email and IP address, registration to 20 an hour per IP address, and every signed-in user to 300 requests a minute.
 - **Authorisation** lives in policies and route middleware, which run before validation: a stranger gets `403` whatever they send. Some lookups answer `404` instead, so ids cannot be probed (other people's devices, messages of chats you are not in).
-- **Headers:** every response has `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a restrictive `Content-Security-Policy`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`; HTTPS responses also carry `Strict-Transport-Security`.
+- **Headers:** every response has `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a restrictive `Content-Security-Policy`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`; HTTPS responses also carry `Strict-Transport-Security`. The server does not announce its software.
 - **CORS** allows only the frontend origin(s) in `CORS_ALLOWED_ORIGINS`, with the headers the app uses (`Authorization`, `Content-Type`, `X-Device-Id`, `X-Socket-ID`).
 - **Errors** never reveal stack traces, file paths or class names when `APP_DEBUG=false`.
 - **Files:** attachments are private and served only through signed URLs that expire after an hour; the stored name comes from the file's content, never from the client; avatars exclude SVG.
 - **Push endpoints:** only known browser push services are accepted, so the server cannot be aimed at internal addresses.
 - **Audit log:** every action of a room host or co-host is recorded (who, what, to whom, when; no IP addresses) and readable by the host: `GET /rooms/{room}/audit-log`.
 - **Secrets at rest:** passwords are hashed; room passwords are hashed; push auth secrets are encrypted with `APP_KEY`; end-to-end private keys never reach the server.
+- **Containers:** the application runs as an unprivileged user. In production PostgreSQL, Redis and Reverb are not reachable from outside Docker, debug output is forced off, and compose refuses to start without your own secrets. The production image also refuses to start without an `APP_KEY`, the development image (which has test tools) refuses to run as production, and demo data is refused in production.
 
 ## Tests and code style
+
+```bash
+docker compose run --rm test          # in Docker (about two minutes)
+```
+
+Without Docker:
 
 ```bash
 ./vendor/bin/pest      # needs the kanyaw_connect_test database (docker compose creates it)
 ./vendor/bin/pint      # fixes style; add --test to only check
 ```
 
-The suite has feature tests for every endpoint (happy path, `401`, `403`), concurrency tests that use real parallel processes (one-time prekeys can only be claimed once), source-scan tests (nothing decrypts ciphertext), and documentation tests: `docs/API.md` must list every route and every broadcast event, and its links and JSON examples must be valid. LiveKit and web push are replaced by fakes in the tests, so no network is needed. GitHub Actions runs Pint and Pest on every push (`.github/workflows/tests.yml`).
+The suite has feature tests for every endpoint (happy path, `401`, `403`), concurrency tests that use real parallel processes (one-time prekeys can only be claimed once), source-scan tests (nothing decrypts ciphertext), and documentation tests: `docs/API.md` must list every route and every broadcast event, and its links and JSON examples must be valid; the README must explain every setting. LiveKit and web push are replaced by fakes in the tests, so no network is needed. GitHub Actions runs Pint and Pest on every push, and builds and starts the Docker stack (`.github/workflows/tests.yml`).
+
+**The tests empty their database.** That is why `phpunit.xml` pins the test database and the test settings so that nothing in your shell or container can override them, and why the run stops with "Refusing to run the tests" if the database name does not end in `_test`.
 
 If Pest ends with no output at all, a fatal PHP error is probably being swallowed by the `laravel/pao` output filter; run `PAO_DISABLE=1 ./vendor/bin/pest` to see it.
 
+## Deploying with Docker
+
+`docker-compose.prod.yml` turns the stack into a production setup. It was run and tested on a single machine (build, start, the full end-to-end checks, automatic HTTPS with a locally issued certificate), but **not on a public server**. Certificate issuance from the internet, TURN and real push services are untested, so treat the first deployment as a rehearsal and do the checks at the end of this section.
+
+**What changes compared with development:** the production image (no test tools, code that cannot change, settings cached); no demo data, no debug output and no built-in keys, so every secret must be set; PostgreSQL, Redis and Reverb are not published; the web server gets HTTPS by itself for your domains; Reverb is reached through the same address (`wss://api.example.org/app/<key>`); LiveKit runs on the host's network; logs are rotated.
+
+**You need:** a Linux server with Docker, DNS names pointing at its IP address (`api.example.org` for the API, `livekit.example.org` for video, `turn.example.org` for TURN), and the ports from [LiveKit and TURN](#livekit-and-turn) open.
+
+1. Put the project on the server (`git clone`) and create `.env` with at least:
+
+   ```bash
+   APP_KEY=base64:...                 # base64: followed by the output of: openssl rand -base64 32
+   APP_URL=https://api.example.org
+   SERVER_NAME=api.example.org        # the web server requests the HTTPS certificate for this name
+   FRONTEND_URL=https://chat.example.org
+   CORS_ALLOWED_ORIGINS=https://chat.example.org
+   REVERB_ALLOWED_ORIGINS=chat.example.org
+   DB_PASSWORD=...                    # openssl rand -hex 24
+   REVERB_APP_ID=...                  # any number, for example 424242
+   REVERB_APP_KEY=...                 # openssl rand -hex 10
+   REVERB_APP_SECRET=...              # openssl rand -hex 16
+   LIVEKIT_DOMAIN=livekit.example.org
+   LIVEKIT_URL=wss://livekit.example.org
+   LIVEKIT_API_KEY=...                # any name, for example kc
+   LIVEKIT_API_SECRET=...             # openssl rand -hex 24 (at least 32 characters)
+   COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml    # so that you can type just "docker compose"
+   ```
+
+   Compose stops with a message naming any required setting that is missing.
+2. Create the LiveKit config: `cp docker/livekit/livekit.production.example.yaml docker/livekit/livekit.production.yaml` and fill it in (the key and secret must be the same as in `.env`, the webhook URL is `https://api.example.org/api/v1/webhooks/livekit`).
+3. `docker compose up -d --build`. The first start requests the certificates, so DNS must already point at the server.
+4. Optional: `docker compose run --rm --no-deps app php artisan push:vapid`, and put the keys in `.env`.
+
+**Check it:**
+- `curl https://api.example.org/up` answers `200`; `docker compose ps` shows everything running.
+- `POST /api/v1/auth/register` and `/login` work. Send a message between two accounts and see it arrive live (proves the queue worker and Reverb).
+- Join a video room from two devices on different networks, one of them on mobile data (proves TURN and the firewall).
+- `docker compose exec app php artisan queue:failed` is empty after a few minutes.
+
+**Updating:** `git pull`, then `docker compose up -d --build`. Migrations run by themselves before the app restarts.
+
+**Backups** (database and uploaded files; do it regularly and try a restore once):
+
+```bash
+docker compose exec -T postgres pg_dump -U kanyaw kanyaw_connect > backup.sql
+docker run --rm -v kanyaw-connect_storage:/data -v "$PWD":/backup alpine tar czf /backup/storage.tgz -C /data .
+# restore the database into an empty one:  docker compose exec -T postgres psql -U kanyaw -d kanyaw_connect < backup.sql
+```
+
 ## Deployment checklist
 
+For a deployment with Docker the section above covers most of this. The list is complete and also applies without Docker.
+
 **Server and PHP**
-- [ ] PHP 8.3+ with the extensions above; `upload_max_filesize` and `post_max_size` above 25 MB (for example `26M` and `30M`), or large uploads fail before Laravel sees them. Match `client_max_body_size` in nginx.
-- [ ] PostgreSQL 16 and Redis 7, both reachable only from the app servers. Redis with persistence (`appendonly yes`) so queued events survive a restart. Backups of the database **and** of `storage/app/private` (attachments).
+- [ ] PHP 8.3+ with the extensions above (the Docker image has them); `upload_max_filesize` and `post_max_size` above 25 MB (the image sets `26M` and `30M`), or large uploads fail before Laravel sees them. Match `client_max_body_size` in nginx if you use it.
+- [ ] PostgreSQL 16 and Redis 7, both reachable only from the app servers. Redis with persistence (`appendonly yes`, the Docker stack does this) so queued events survive a restart. Backups of the database **and** of `storage/app/private` (attachments; the `storage` volume in Docker).
 - [ ] HTTPS everywhere; the API, Reverb and LiveKit each behind TLS.
 
 **Application**
-- [ ] `.env` for production: `APP_ENV=production`, `APP_DEBUG=false`, a real `APP_URL`, `php artisan key:generate`, strong `DB_PASSWORD`, `REDIS_PASSWORD`.
+- [ ] `.env` for production: `APP_ENV=production`, `APP_DEBUG=false`, a real `APP_URL`, a real `APP_KEY`, strong `DB_PASSWORD`, `REDIS_PASSWORD` if Redis is reachable by anything else.
 - [ ] `TRUSTED_PROXIES` set if the app is behind a proxy or load balancer (otherwise rate limits see the proxy's address and signed attachment URLs do not validate).
-- [ ] `CORS_ALLOWED_ORIGINS` and `REVERB_ALLOWED_ORIGINS` set to the frontend origin(s); new `REVERB_APP_ID/KEY/SECRET`; new `LIVEKIT_API_KEY/SECRET` (long and random).
-- [ ] `php artisan migrate --force` (not `migrate:fresh`, and do not seed production).
-- [ ] `php artisan storage:link`, then `php artisan config:cache route:cache event:cache`; run them again after every deploy.
+- [ ] `CORS_ALLOWED_ORIGINS` set to the frontend origin(s) and `REVERB_ALLOWED_ORIGINS` to the frontend host name(s); new `REVERB_APP_ID/KEY/SECRET`; new `LIVEKIT_API_KEY/SECRET` (long and random).
+- [ ] `php artisan migrate --force` (not `migrate:fresh`, and do not seed production). The Docker stack does this on every start.
+- [ ] Without Docker: `php artisan storage:link`, then `php artisan config:cache route:cache event:cache`; run them again after every deploy.
 - [ ] `php artisan push:vapid` once, keys saved in `.env`.
 
-**Processes** (use Supervisor or systemd so they restart)
-- [ ] PHP-FPM + nginx for the API.
+**Processes** (Docker restarts them; otherwise use Supervisor or systemd)
+- [ ] The API (FrankenPHP in Docker; PHP-FPM + nginx otherwise).
 - [ ] `php artisan queue:work redis --tries=3 --max-time=3600` — restart it on deploy with `php artisan queue:restart`.
-- [ ] `php artisan reverb:start` behind a TLS proxy that forwards WebSocket upgrades (`proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`).
-- [ ] Cron: `* * * * * cd /var/www/kanyaw-connect && php artisan schedule:run >> /dev/null 2>&1`
+- [ ] `php artisan reverb:start` behind a TLS proxy that forwards WebSocket upgrades (`proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`). The Docker web server does this.
+- [ ] The scheduler: the `scheduler` container, or the cron line `* * * * * cd /var/www/kanyaw-connect && php artisan schedule:run >> /dev/null 2>&1`.
 - [ ] LiveKit with TLS and TURN, its webhook pointing at the API (see above).
 
 **After deploying**
@@ -286,16 +426,20 @@ If Pest ends with no output at all, a fatal PHP error is probably being swallowe
 ## Project layout
 
 ```
-app/Actions/       one class per business operation (SendMessage, JoinRoom, EndStaleRooms, …)
-app/Services/      shared helpers (LiveKit, web push, presence, key bundles, broadcasting)
-app/Http/          thin controllers, Form Requests (validation), API Resources (JSON shape), middleware
-app/Policies/      authorisation rules (who may do what)
-app/Events/        broadcast events (queued, dot-named: message.sent, room.ended, …)
-app/Console/       artisan commands (scheduled housekeeping, VAPID keys)
-config/            chat, rooms, e2ee, push, cleanup, security, cors, services (LiveKit)
-database/          migrations (UUID keys), factories, seeder
-docs/API.md        the API contract for the frontend
-tests/             Feature (every endpoint), Unit (source scans, helpers), Integration (real parallel processes)
+Dockerfile                one image for every PHP part (targets: development, production)
+docker-compose.yml        the whole stack for development: one command
+docker-compose.prod.yml   production settings, added on top of the file above
+docker/                   web server config (Caddyfile), PHP settings, start-up scripts, PostgreSQL and LiveKit files
+app/Actions/              one class per business operation (SendMessage, JoinRoom, EndStaleRooms, …)
+app/Services/             shared helpers (LiveKit, web push, presence, key bundles, broadcasting)
+app/Http/                 thin controllers, Form Requests (validation), API Resources (JSON shape), middleware
+app/Policies/             authorisation rules (who may do what)
+app/Events/               broadcast events (queued, dot-named: message.sent, room.ended, …)
+app/Console/              artisan commands (scheduled housekeeping, VAPID keys)
+config/                   chat, rooms, e2ee, push, cleanup, security, cors, services (LiveKit)
+database/                 migrations (UUID keys), factories, seeder
+docs/API.md              the API contract for the frontend
+tests/                    Feature (every endpoint), Unit (source scans, helpers), Integration (real parallel processes)
 ```
 
 Conventions: UUID primary keys and `foreignUuid` everywhere; routes under `/api/v1`; validation only in Form Requests; authorisation only in policies; business logic in Actions and Services; lists use cursor pagination (30 by default, 100 at most); broadcast events are queued; rate limits are named limiters in `AppServiceProvider`; places where two requests could race use transactions and row locks.
@@ -304,14 +448,22 @@ Conventions: UUID primary keys and `foreignUuid` everywhere; routes under `/api/
 
 | Symptom | Likely cause |
 |---|---|
-| Messages are sent but nobody receives them live | The queue worker (`queue:work`) or Reverb is not running |
-| A video room never becomes `active`, seats are never freed | LiveKit cannot reach `/api/v1/webhooks/livekit`, or `LIVEKIT_API_SECRET` differs between LiveKit and `.env` |
+| `port is already allocated` / `address already in use` | Another program uses the port. Set `APP_PORT`, `REVERB_PORT`, `FORWARD_DB_PORT` or `FORWARD_REDIS_PORT` in `.env` to a free one (an existing PostgreSQL on 5432 is the usual one). |
+| `docker compose up` says an `env_file` or `required` key is invalid | Compose is older than 2.24. Update Docker. |
+| The first build is slow | It compiles PHP extensions and downloads packages (several minutes). Later builds reuse the cache. |
+| A service is `unhealthy` or keeps restarting | `docker compose logs <service>`; `migrate` failing (it must exit with 0) stops the others from starting: `docker compose logs migrate` |
+| `password authentication failed for user "kanyaw"` | `DB_PASSWORD` was changed after the database volume was created. Use the old one, or `docker compose down -v` (deletes the data). |
+| Changed code, nothing changes | The code is inside the image: `docker compose up -d --build` |
+| `No application encryption key has been specified` | Only without Docker: run `php artisan key:generate`. |
+| Messages are sent but nobody receives them live | The queue worker (`queue`) or Reverb is not running: `docker compose ps`, `docker compose logs queue reverb` |
+| A video room never becomes `active`, seats are never freed | LiveKit cannot reach `/api/v1/webhooks/livekit` (see `LIVEKIT_WEBHOOK_URL`), or `LIVEKIT_API_SECRET` differs between LiveKit and `.env` |
 | Joining a room answers `503` | LiveKit is not running or `LIVEKIT_HOST` is wrong |
+| Video connects but there is no sound or picture on another device | `LIVEKIT_NODE_IP` still says `127.0.0.1`; see [Using it from another device](#using-it-from-another-device). Behind a strict firewall: TURN is missing. |
 | Attachment links answer `403` behind a proxy | `TRUSTED_PROXIES` is not set, so the signature was made for another scheme or host |
 | Browser says "blocked by CORS" | The frontend origin is not in `CORS_ALLOWED_ORIGINS` (it must match scheme, host and port exactly), or the request sends a header that is not allowed |
-| WebSocket refuses to connect | The frontend origin is not in `REVERB_ALLOWED_ORIGINS`, or the proxy does not forward `Upgrade` headers |
+| WebSocket refuses to connect (`Origin not allowed`) | The frontend's **host name** is not in `REVERB_ALLOWED_ORIGINS` (host names only, no `https://` and no port), or the proxy does not forward `Upgrade` headers |
 | No push notifications | No `VAPID_*` keys, no queue worker, the app is open (online users are skipped), the chat is muted, or the browser never subscribed (`GET /push/subscriptions`) |
 | Users show as online for ever | The scheduler is not running (`presence:mark-offline`) |
-| Large uploads fail | `upload_max_filesize` / `post_max_size` / nginx `client_max_body_size` are below 25 MB |
-| `Class "Sodium…"` / `bcmath` errors | The `sodium` or `bcmath` PHP extension is missing |
+| Large uploads fail | `upload_max_filesize` / `post_max_size` / the proxy's body limit are below 25 MB |
+| `Class "Sodium…"` / `bcmath` errors | Without Docker: the `sodium` or `bcmath` PHP extension is missing |
 | Pest prints nothing | See [Tests and code style](#tests-and-code-style) |

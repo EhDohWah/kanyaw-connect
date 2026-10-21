@@ -1,0 +1,35 @@
+# Web server settings (FrankenPHP is the Caddy web server with PHP built in).
+#
+# SERVER_NAME decides how the server listens:
+#   ":80"            plain HTTP on port 80. This is the default and is what docker-compose.yml uses.
+#   "api.example.org" a real domain name: HTTPS is switched on and the certificate is requested and
+#                    renewed automatically (ports 80 and 443 must be reachable from the internet).
+{
+	skip_install_trust
+
+	{$CADDY_GLOBAL_OPTIONS}
+
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
+}
+
+# Extra sites, given through the environment. docker-compose.prod.yml uses this to serve LiveKit over HTTPS.
+{$CADDY_EXTRA_CONFIG}
+
+{$SERVER_NAME::80} {
+	root * /app/public
+	encode zstd br gzip
+
+	# Do not announce which web server this is.
+	header -Server
+
+	# Browsers connect to Reverb (websockets) through this same address, so one domain and one
+	# certificate cover the API and the live updates: wss://<domain>/app/<REVERB_APP_KEY>.
+	# Only the websocket path is passed on. Reverb's publishing endpoint (/apps/...) stays internal,
+	# because only the Laravel containers need it.
+	@websocket path /app/*
+	reverse_proxy @websocket reverb:8080
+
+	php_server
+}

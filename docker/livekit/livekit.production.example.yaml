@@ -1,11 +1,15 @@
-# LiveKit server config for PRODUCTION: an example to copy and adapt, NOT the file docker-compose uses
-# (that is livekit.yaml, for development).
+# LiveKit server config for PRODUCTION: an example to copy and adapt.
+#
+#     cp docker/livekit/livekit.production.example.yaml docker/livekit/livekit.production.yaml
+#
+# docker-compose.prod.yml mounts the copy (git ignores it, because it holds your secret). The development
+# stack needs no file: its LiveKit settings are inside docker-compose.yml.
 #
 # It has not been run against a real deployment. Check every option against LiveKit's current
 # documentation (https://docs.livekit.io/home/self-hosting/deployment/) before relying on it.
 #
 # Replace everything in UPPER CASE or marked "example.org".
-port: 7880            # signalling; put nginx/Caddy with TLS in front, so clients use wss://livekit.example.org
+port: 7880            # signalling. Do NOT open this port in the firewall: the web server passes wss://livekit.example.org on to it
 log_level: info
 
 rtc:

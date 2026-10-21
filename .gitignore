@@ -26,3 +26,6 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 dump.rdb
+
+# Holds the LiveKit secret (copy of docker/livekit/livekit.production.example.yaml)
+/docker/livekit/livekit.production.yaml
