@@ -14,8 +14,8 @@
 # Settings: copy .env.example to .env and change what you need. Every setting has a working default,
 # so the file is optional. The README explains all of them.
 #
-# While you edit code, run `docker compose watch` (after `docker compose up -d --build`): the files you
-# save are copied into the running containers, and the services that need it restart by themselves.
+# While you edit code, run `docker compose watch`: the rules for it are in docker-compose.override.yml,
+# which `docker compose` loads next to this file by itself.
 name: kanyaw-connect
 
 x-php: &php
@@ -67,31 +67,6 @@ x-php: &php
     LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret-secret-secret-secret-secret-secret}
     # Logs go to `docker compose logs`.
     LOG_CHANNEL: stderr
-
-# The rules of `docker compose watch`, written once and used by the services further down.
-#   sync          copy the saved file into the container (the web server reads PHP fresh on every request)
-#   sync+restart  copy it, then restart the container (a worker keeps the code it started with in memory)
-#   rebuild       build the image again and replace the container (new packages, a new Dockerfile)
-# Files and folders that are not listed here (vendor, storage, .env, ...) are never copied.
-x-watch-rules:
-  sync-app: &sync-app {action: sync, path: ./app, target: /app/app}
-  sync-bootstrap: &sync-bootstrap {action: sync, path: ./bootstrap, target: /app/bootstrap, ignore: [cache/]}
-  sync-config: &sync-config {action: sync, path: ./config, target: /app/config}
-  sync-database: &sync-database {action: sync, path: ./database, target: /app/database}
-  sync-routes: &sync-routes {action: sync, path: ./routes, target: /app/routes}
-  # So that `docker compose exec app ./vendor/bin/pest` runs the tests you just saved.
-  sync-tests: &sync-tests {action: sync, path: ./tests, target: /app/tests}
-  sync-docs: &sync-docs {action: sync, path: ./docs, target: /app/docs}
-  sync-phpunit: &sync-phpunit {action: sync, path: ./phpunit.xml, target: /app/phpunit.xml}
-  sync-readme: &sync-readme {action: sync, path: ./README.md, target: /app/README.md}
-  sync-env-example: &sync-env-example {action: sync, path: ./.env.example, target: /app/.env.example}
-  restart-app: &restart-app {action: sync+restart, path: ./app, target: /app/app}
-  restart-bootstrap: &restart-bootstrap {action: sync+restart, path: ./bootstrap, target: /app/bootstrap, ignore: [cache/]}
-  restart-config: &restart-config {action: sync+restart, path: ./config, target: /app/config}
-  rebuild-composer-json: &rebuild-composer-json {action: rebuild, path: ./composer.json}
-  rebuild-composer-lock: &rebuild-composer-lock {action: rebuild, path: ./composer.lock}
-  rebuild-dockerfile: &rebuild-dockerfile {action: rebuild, path: ./Dockerfile}
-  rebuild-docker: &rebuild-docker {action: rebuild, path: ./docker, ignore: [postgres/, livekit/]}
 
 services:
   postgres:
@@ -150,22 +125,6 @@ services:
       - storage:/app/storage
       - caddy-data:/data
       - caddy-config:/config
-    develop:
-      watch:
-        - *sync-app
-        - *sync-bootstrap
-        - *sync-config
-        - *sync-database
-        - *sync-routes
-        - *sync-tests
-        - *sync-docs
-        - *sync-phpunit
-        - *sync-readme
-        - *sync-env-example
-        - *rebuild-composer-json
-        - *rebuild-composer-lock
-        - *rebuild-dockerfile
-        - *rebuild-docker
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -183,19 +142,6 @@ services:
     command: ["php", "artisan", "reverb:start"]
     ports:
       - "${REVERB_PORT:-8080}:8080"
-    # Restarts only when the settings change: it does not run your code, and every restart would
-    # disconnect everyone who is connected.
-    develop:
-      watch:
-        - *restart-config
-        - *sync-app
-        - *sync-bootstrap
-        - *sync-database
-        - *sync-routes
-        - *rebuild-composer-json
-        - *rebuild-composer-lock
-        - *rebuild-dockerfile
-        - *rebuild-docker
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -220,17 +166,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    develop:
-      watch:
-        - *restart-app
-        - *restart-bootstrap
-        - *restart-config
-        - *sync-database
-        - *sync-routes
-        - *rebuild-composer-json
-        - *rebuild-composer-lock
-        - *rebuild-dockerfile
-        - *rebuild-docker
 
   scheduler:
     <<: *php
@@ -242,18 +177,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    # Needs no restart: every minute it starts a new PHP process for the jobs that are due.
-    develop:
-      watch:
-        - *sync-app
-        - *sync-bootstrap
-        - *sync-config
-        - *sync-database
-        - *sync-routes
-        - *rebuild-composer-json
-        - *rebuild-composer-lock
-        - *rebuild-dockerfile
-        - *rebuild-docker
 
   livekit:
     image: livekit/livekit-server:v1.13.10

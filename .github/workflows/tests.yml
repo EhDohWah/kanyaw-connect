@@ -83,10 +83,11 @@ jobs:
 
       - name: The production compose file asks for its secrets, and parses once they are given
         run: |
+          docker compose version
           if docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2> prod-error.txt; then
             echo "Compose should have refused to start without secrets"; exit 1
           fi
-          grep -q "APP_KEY" prod-error.txt
+          grep -q "APP_KEY" prod-error.txt || { echo "Compose failed, but not about the missing APP_KEY:"; cat prod-error.txt; exit 1; }
 
           export APP_KEY=base64:x APP_URL=https://api.example.org FRONTEND_URL=https://chat.example.org DB_PASSWORD=x \
             REVERB_APP_ID=1 REVERB_APP_KEY=x REVERB_APP_SECRET=x REVERB_ALLOWED_ORIGINS=chat.example.org \

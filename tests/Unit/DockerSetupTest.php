@@ -72,8 +72,10 @@ it('explains every service of docker-compose.yml in the README', function () {
         ->and($missing)->toBe([]);
 });
 
-it('only changes services in the production file that exist in the main one', function () {
-    expect(array_values(array_diff(composeServices('docker-compose.prod.yml'), composeServices('docker-compose.yml'))))->toBe([]);
+it('only changes services in the other compose files that exist in the main one', function () {
+    foreach (['docker-compose.prod.yml', 'docker-compose.override.yml'] as $file) {
+        expect(array_values(array_diff(composeServices($file), composeServices('docker-compose.yml'))))->toBe([], $file);
+    }
 });
 
 it('only copies files into the image that exist', function () {
@@ -113,10 +115,10 @@ it('never puts a secret or a local settings file into the image', function () {
         ->and(dockerFile('.gitignore'))->toContain('/docker/livekit/livekit.production.yaml');
 });
 
-/** The text of one service in docker-compose.yml, from its name to the next service. */
+/** The text of one service in docker-compose.override.yml (the watch rules), from its name to the next service. */
 function composeServiceBlock(string $name): string
 {
-    preg_match('/^  '.$name.':\n(.*?)(?=^  [a-z][a-z-]*:\n|^volumes:)/ms', dockerFile('docker-compose.yml'), $m);
+    preg_match('/^  '.$name.':\n(.*?)(?=^  [a-z][a-z-]*:\n|\z)/ms', dockerFile('docker-compose.override.yml'), $m);
 
     return $m[1] ?? '';
 }
@@ -124,7 +126,7 @@ function composeServiceBlock(string $name): string
 /** @return list<string> every folder or file `docker compose watch` is told to look at */
 function watchedPaths(): array
 {
-    preg_match_all('/\bpath: (\.\/[^,}\s]+)/', dockerFile('docker-compose.yml'), $m);
+    preg_match_all('/\bpath: (\.\/[^,}\s]+)/', dockerFile('docker-compose.override.yml'), $m);
 
     return array_values(array_unique($m[1]));
 }
@@ -140,7 +142,7 @@ it('only watches files and folders that exist', function () {
 });
 
 it('copies files only to places inside the application folder of the container', function () {
-    preg_match_all('/\btarget: (\/[^,}\s]+)/', dockerFile('docker-compose.yml'), $m);
+    preg_match_all('/\btarget: (\/[^,}\s]+)/', dockerFile('docker-compose.override.yml'), $m);
     $outside = array_values(array_filter($m[1], fn ($target) => ! str_starts_with($target, '/app/')));
 
     // The targets of the volumes are written differently ("storage:/app/storage"), so these are only the watch rules.
@@ -168,10 +170,19 @@ it('rebuilds the image when the packages or the image recipe change', function (
     }
 });
 
-it('does not watch anything in production, where the code must not change', function () {
-    expect(dockerFile('docker-compose.prod.yml'))->toContain('develop: !reset null');
+it('keeps the watch rules out of production, where the code must not change', function () {
+    // docker-compose.override.yml is loaded on its own only when no -f or COMPOSE_FILE names the files, and
+    // the production command always names them. So the production file must not carry rules of its own,
+    // and the README must never tell anyone to add the override file to a production command.
+    $readme = dockerFile('README.md');
+
+    expect(dockerFile('docker-compose.prod.yml'))->not->toContain('develop:')
+        ->and($readme)->toContain('-f docker-compose.yml -f docker-compose.prod.yml')
+        ->toContain('COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml')
+        ->not->toContain('docker-compose.prod.yml -f docker-compose.override.yml')
+        ->not->toContain('docker-compose.prod.yml:docker-compose.override.yml');
 });
 
 it('explains docker compose watch in the README', function () {
-    expect(dockerFile('README.md'))->toContain('docker compose watch')->toContain('docker compose exec app php artisan migrate');
+    expect(dockerFile('README.md'))->toContain('docker compose watch')->toContain('docker-compose.override.yml')->toContain('docker compose exec app php artisan migrate');
 });

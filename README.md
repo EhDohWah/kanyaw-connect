@@ -118,7 +118,7 @@ Leave this running in a terminal while you work. It starts the stack (like `dock
 | `.env` or `docker-compose.yml` | Not watched. Run `docker compose up -d`. |
 | A new migration | Copied but **not run**: `docker compose exec app php artisan migrate` |
 
-Reverb does not restart when you change code in `app/`, because it does not run your code, and each restart would disconnect every client. Secrets and runtime files (`.env`, `vendor/`, `storage/`) are never copied. Production never watches: `docker-compose.prod.yml` switches it off.
+Reverb does not restart when you change code in `app/`, because it does not run your code, and each restart would disconnect every client. Secrets and runtime files (`.env`, `vendor/`, `storage/`) are never copied. The rules are in `docker-compose.override.yml`, which `docker compose` loads next to `docker-compose.yml` on its own, but only when you do not name files yourself. The production commands do name them, so production never watches.
 
 ## What runs in Docker
 
@@ -392,7 +392,7 @@ If Pest ends with no output at all, a fatal PHP error is probably being swallowe
    COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml    # so that you can type just "docker compose"
    ```
 
-   Compose stops with a message naming any required setting that is missing.
+   Compose stops with a message naming any required setting that is missing. Without the `COMPOSE_FILE` line, name the files every time: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`. Always name them on a server: a plain `docker compose up` starts the development stack, with its public keys and demo data.
 2. Create the LiveKit config: `cp docker/livekit/livekit.production.example.yaml docker/livekit/livekit.production.yaml` and fill it in (the key and secret must be the same as in `.env`, the webhook URL is `https://api.example.org/api/v1/webhooks/livekit`).
 3. `docker compose up -d --build`. The first start requests the certificates, so DNS must already point at the server.
 4. Optional: `docker compose run --rm --no-deps app php artisan push:vapid`, and put the keys in `.env`.
@@ -448,7 +448,8 @@ For a deployment with Docker the section above covers most of this. The list is 
 ```
 Dockerfile                one image for every PHP part (targets: development, production)
 docker-compose.yml        the whole stack for development: one command
-docker-compose.prod.yml   production settings, added on top of the file above
+docker-compose.override.yml   the rules of `docker compose watch` (loaded by itself in development, never in production)
+docker-compose.prod.yml   production settings, added on top of the main file
 docker/                   web server config (Caddyfile), PHP settings, start-up scripts, PostgreSQL and LiveKit files
 app/Actions/              one class per business operation (SendMessage, JoinRoom, EndStaleRooms, …)
 app/Services/             shared helpers (LiveKit, web push, presence, key bundles, broadcasting)

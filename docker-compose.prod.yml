@@ -40,8 +40,6 @@ x-php-prod: &php-prod
   build:
     target: production
   environment: *php-prod-environment
-  # Never copy files into a production container: its code is part of the image and must not change.
-  develop: !reset null
   extra_hosts:
     - "host.docker.internal:host-gateway"
   logging: &prod-logging
