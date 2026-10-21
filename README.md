@@ -83,7 +83,8 @@ On a deployed server the websocket goes through the API's own address, so the fr
 ## Using the Docker stack
 
 ```bash
-docker compose up -d --build        # start everything; also use this after you change code or pull new code
+docker compose up -d --build        # start everything; also use this after you pull new code
+docker compose watch                # start everything AND copy the files you save into the containers (see below)
 docker compose ps                   # what is running
 docker compose logs -f app queue    # follow the logs of some services (all if you name none)
 docker compose exec app php artisan route:list     # run any artisan command
@@ -94,11 +95,30 @@ docker compose down                 # stop everything; the data stays
 docker compose down -v              # stop AND delete all data: database, Redis, uploaded files (a fresh start, with new demo data)
 ```
 
-- **The code is inside the image.** After you edit PHP files run `docker compose up -d --build`. Only the last layers are rebuilt, so it takes seconds, and containers whose image changed are replaced.
+- **The code is inside the image.** Without `docker compose watch`, run `docker compose up -d --build` after you edit PHP files. Only the last layers are rebuilt, so it takes seconds, and containers whose image changed are replaced.
 - **To put the demo data back** without deleting the volumes: `docker compose exec app php artisan migrate:fresh --seed --force`. This empties the development database.
 - **Logs** of the application go to `docker compose logs`, not to a file. The web server writes no access log, on purpose: signed attachment links contain a secret.
 - **Running the tests inside Docker cannot touch your data.** `phpunit.xml` forces the separate `kanyaw_connect_test` database, and `tests/TestCase.php` stops the run if the database name does not end in `_test`.
 - **Where the data lives:** named volumes `postgres-data`, `redis-data`, `storage` (uploaded files) and `caddy-data`. They survive `docker compose down` and rebuilds.
+
+### Editing code with docker compose watch
+
+```bash
+docker compose watch
+```
+
+Leave this running in a terminal while you work. It starts the stack (like `docker compose up -d --build`) and then copies every file you save into the running containers, so you do not rebuild after each change. Press Ctrl+C to stop watching; the containers keep running. It needs Compose 2.23 or newer.
+
+| You save | What happens |
+|---|---|
+| PHP in `app/`, `routes/`, `database/` or `bootstrap/` | Copied. The API serves the new code within a couple of seconds. The queue worker restarts by itself (a few seconds). |
+| A file in `config/` | Copied. The queue worker and Reverb restart; people connected to Reverb are disconnected for a moment and reconnect by themselves. |
+| Tests, `docs/`, `README.md`, `phpunit.xml` | Copied, so `docker compose exec app ./vendor/bin/pest` runs what you just saved. |
+| `composer.json`, `composer.lock`, `Dockerfile` or `docker/` | The image is rebuilt and the containers are replaced. This takes a minute or more. |
+| `.env` or `docker-compose.yml` | Not watched. Run `docker compose up -d`. |
+| A new migration | Copied but **not run**: `docker compose exec app php artisan migrate` |
+
+Reverb does not restart when you change code in `app/`, because it does not run your code, and each restart would disconnect every client. Secrets and runtime files (`.env`, `vendor/`, `storage/`) are never copied. Production never watches: `docker-compose.prod.yml` switches it off.
 
 ## What runs in Docker
 
@@ -453,7 +473,9 @@ Conventions: UUID primary keys and `foreignUuid` everywhere; routes under `/api/
 | The first build is slow | It compiles PHP extensions and downloads packages (several minutes). Later builds reuse the cache. |
 | A service is `unhealthy` or keeps restarting | `docker compose logs <service>`; `migrate` failing (it must exit with 0) stops the others from starting: `docker compose logs migrate` |
 | `password authentication failed for user "kanyaw"` | `DB_PASSWORD` was changed after the database volume was created. Use the old one, or `docker compose down -v` (deletes the data). |
-| Changed code, nothing changes | The code is inside the image: `docker compose up -d --build` |
+| Changed code, nothing changes | `docker compose watch` is not running, or the file is not one it copies (see [Editing code with docker compose watch](#editing-code-with-docker-compose-watch)). Otherwise the code is inside the image: `docker compose up -d --build` |
+| `docker compose watch` complains about `develop` or an unknown action | Compose is older than 2.23. Update Docker. |
+| I added a migration and the table is missing | Watch copies the file but does not run it: `docker compose exec app php artisan migrate` |
 | `No application encryption key has been specified` | Only without Docker: run `php artisan key:generate`. |
 | Messages are sent but nobody receives them live | The queue worker (`queue`) or Reverb is not running: `docker compose ps`, `docker compose logs queue reverb` |
 | A video room never becomes `active`, seats are never freed | LiveKit cannot reach `/api/v1/webhooks/livekit` (see `LIVEKIT_WEBHOOK_URL`), or `LIVEKIT_API_SECRET` differs between LiveKit and `.env` |

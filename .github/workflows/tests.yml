@@ -88,11 +88,16 @@ jobs:
           fi
           grep -q "APP_KEY" prod-error.txt
 
-          APP_KEY=base64:x APP_URL=https://api.example.org FRONTEND_URL=https://chat.example.org DB_PASSWORD=x \
-          REVERB_APP_ID=1 REVERB_APP_KEY=x REVERB_APP_SECRET=x REVERB_ALLOWED_ORIGINS=chat.example.org \
-          LIVEKIT_URL=wss://livekit.example.org LIVEKIT_API_KEY=x LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-          SERVER_NAME=api.example.org LIVEKIT_DOMAIN=livekit.example.org \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          export APP_KEY=base64:x APP_URL=https://api.example.org FRONTEND_URL=https://chat.example.org DB_PASSWORD=x \
+            REVERB_APP_ID=1 REVERB_APP_KEY=x REVERB_APP_SECRET=x REVERB_ALLOWED_ORIGINS=chat.example.org \
+            LIVEKIT_URL=wss://livekit.example.org LIVEKIT_API_KEY=x LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
+            SERVER_NAME=api.example.org LIVEKIT_DOMAIN=livekit.example.org
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+
+          # Production must never copy files into its containers (docker compose watch).
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config | grep -q "develop:"; then
+            echo "The production file must switch off docker compose watch"; exit 1
+          fi
 
       - name: The images refuse unsafe set-ups
         run: |
@@ -137,6 +142,48 @@ jobs:
       - name: Run the test suite inside the container
         run: docker compose run --rm test
 
+      - name: Saved files reach the running containers (docker compose watch)
+        run: |
+          docker compose watch --no-up > watch.log 2>&1 &
+          watch_pid=$!
+          for i in $(seq 1 20); do grep -q "Watch enabled" watch.log && break; sleep 1; done
+          grep -q "Watch enabled" watch.log
+
+          started() { docker inspect -f '{{.State.StartedAt}}' "kanyaw-connect-$1-1"; }
+          app_before=$(started app); queue_before=$(started queue); reverb_before=$(started reverb)
+
+          # A new class is copied into the web server, which can use it at once, without a restart.
+          printf '<?php\nnamespace App;\nclass WatchProbe { public const OK = "yes"; }\n' > app/WatchProbe.php
+          loaded=no
+          for i in $(seq 1 30); do
+            if docker compose exec -T app php -r 'require "vendor/autoload.php"; exit(App\WatchProbe::OK === "yes" ? 0 : 1);' 2>/dev/null; then
+              loaded=yes; break
+            fi
+            sleep 1
+          done
+          test "$loaded" = yes
+
+          # The queue worker keeps code in memory, so it restarts. Reverb does not run this code, so it must not.
+          for i in $(seq 1 40); do [ "$(started queue)" != "$queue_before" ] && break; sleep 1; done
+          test "$(started queue)" != "$queue_before"
+          test "$(started reverb)" = "$reverb_before"
+          test "$(started app)" = "$app_before"
+
+          # A change in config/ restarts Reverb as well as the queue worker, but still not the web server.
+          queue_before=$(started queue)
+          echo '// watch test' >> config/chat.php
+          for i in $(seq 1 40); do
+            [ "$(started reverb)" != "$reverb_before" ] && [ "$(started queue)" != "$queue_before" ] && break
+            sleep 1
+          done
+          test "$(started reverb)" != "$reverb_before"
+          test "$(started queue)" != "$queue_before"
+          test "$(started app)" = "$app_before"
+
+          kill -INT "$watch_pid"; wait "$watch_pid" || true
+
       - name: Logs (only when something failed)
         if: failure()
-        run: docker compose logs --no-color --tail 100
+        run: |
+          docker compose logs --no-color --tail 100
+          cat watch.log || true

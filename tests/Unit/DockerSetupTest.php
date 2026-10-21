@@ -112,3 +112,66 @@ it('never puts a secret or a local settings file into the image', function () {
     expect($ignore)->toContain('.env')->toContain('.git')->toContain('vendor')
         ->and(dockerFile('.gitignore'))->toContain('/docker/livekit/livekit.production.yaml');
 });
+
+/** The text of one service in docker-compose.yml, from its name to the next service. */
+function composeServiceBlock(string $name): string
+{
+    preg_match('/^  '.$name.':\n(.*?)(?=^  [a-z][a-z-]*:\n|^volumes:)/ms', dockerFile('docker-compose.yml'), $m);
+
+    return $m[1] ?? '';
+}
+
+/** @return list<string> every folder or file `docker compose watch` is told to look at */
+function watchedPaths(): array
+{
+    preg_match_all('/\bpath: (\.\/[^,}\s]+)/', dockerFile('docker-compose.yml'), $m);
+
+    return array_values(array_unique($m[1]));
+}
+
+it('watches the folders that hold the application code', function () {
+    expect(watchedPaths())->toContain('./app', './bootstrap', './config', './database', './routes', './composer.lock', './Dockerfile');
+});
+
+it('only watches files and folders that exist', function () {
+    $missing = array_values(array_filter(watchedPaths(), fn ($path) => ! file_exists(dockerRoot().'/'.substr($path, 2))));
+
+    expect($missing)->toBe([]);
+});
+
+it('copies files only to places inside the application folder of the container', function () {
+    preg_match_all('/\btarget: (\/[^,}\s]+)/', dockerFile('docker-compose.yml'), $m);
+    $outside = array_values(array_filter($m[1], fn ($target) => ! str_starts_with($target, '/app/')));
+
+    // The targets of the volumes are written differently ("storage:/app/storage"), so these are only the watch rules.
+    expect($m[1])->not->toBeEmpty()->and($outside)->toBe([]);
+});
+
+it('never copies secrets or runtime state into a container', function () {
+    $forbidden = array_values(array_filter(watchedPaths(), fn ($path) => in_array($path, ['./.env', './vendor', './storage', './.git', './node_modules'], true)));
+
+    expect($forbidden)->toBe([]);
+});
+
+it('restarts the workers that keep code in memory, and nothing else', function () {
+    // The web server reads PHP again on every request, and the scheduler starts a new process for each job.
+    expect(composeServiceBlock('app'))->not->toContain('*restart-')->toContain('*sync-app')
+        ->and(composeServiceBlock('scheduler'))->not->toContain('*restart-')->toContain('*sync-app')
+        ->and(composeServiceBlock('queue'))->toContain('*restart-app')->toContain('*restart-config')
+        // Reverb does not run application code, and every restart disconnects every client.
+        ->and(composeServiceBlock('reverb'))->toContain('*restart-config')->not->toContain('*restart-app');
+});
+
+it('rebuilds the image when the packages or the image recipe change', function () {
+    foreach (['app', 'reverb', 'queue', 'scheduler'] as $service) {
+        expect(composeServiceBlock($service))->toContain('*rebuild-composer-lock')->toContain('*rebuild-dockerfile');
+    }
+});
+
+it('does not watch anything in production, where the code must not change', function () {
+    expect(dockerFile('docker-compose.prod.yml'))->toContain('develop: !reset null');
+});
+
+it('explains docker compose watch in the README', function () {
+    expect(dockerFile('README.md'))->toContain('docker compose watch')->toContain('docker compose exec app php artisan migrate');
+});
