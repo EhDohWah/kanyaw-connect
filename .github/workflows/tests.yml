@@ -81,23 +81,31 @@ jobs:
       - name: Build the production image
         run: docker build --target production --tag kanyaw-connect:prod .
 
-      - name: The production compose file asks for its secrets, and parses once they are given
+      - name: The production compose file asks for every secret, and parses once they are given
         run: |
           docker compose version
-          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2> prod-error.txt; then
-            echo "Compose should have refused to start without secrets"; exit 1
-          fi
-          grep -q "APP_KEY" prod-error.txt || { echo "Compose failed, but not about the missing APP_KEY:"; cat prod-error.txt; exit 1; }
 
           export APP_KEY=base64:x APP_URL=https://api.example.org FRONTEND_URL=https://chat.example.org DB_PASSWORD=x \
             REVERB_APP_ID=1 REVERB_APP_KEY=x REVERB_APP_SECRET=x REVERB_ALLOWED_ORIGINS=chat.example.org \
             LIVEKIT_URL=wss://livekit.example.org LIVEKIT_API_KEY=x LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
             SERVER_NAME=api.example.org LIVEKIT_DOMAIN=livekit.example.org
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          prod="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+
+          # With everything else set, leaving out one setting must stop compose and name that setting.
+          # (Compose reports only one missing setting at a time, and not always the same one, so they are tried one by one.)
+          for name in APP_KEY APP_URL FRONTEND_URL DB_PASSWORD REVERB_APP_ID REVERB_APP_KEY REVERB_APP_SECRET \
+            REVERB_ALLOWED_ORIGINS LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET SERVER_NAME LIVEKIT_DOMAIN; do
+            if env -u "$name" $prod config > /dev/null 2> prod-error.txt; then
+              echo "Compose should have refused to start without $name"; exit 1
+            fi
+            grep -q "$name" prod-error.txt || { echo "Compose failed without $name, but its message does not name it:"; cat prod-error.txt; exit 1; }
+          done
+
+          $prod config --quiet
 
           # Production must never copy files into its containers (docker compose watch).
-          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config | grep -q "develop:"; then
-            echo "The production file must switch off docker compose watch"; exit 1
+          if $prod config | grep -q "develop:"; then
+            echo "The production file must not carry docker compose watch rules"; exit 1
           fi
 
       - name: The images refuse unsafe set-ups
