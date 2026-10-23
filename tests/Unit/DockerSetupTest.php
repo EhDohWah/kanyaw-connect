@@ -115,8 +115,11 @@ it('never puts a secret or a local settings file into the image', function () {
         ->and(dockerFile('.gitignore'))->toContain('/docker/livekit/livekit.production.yaml');
 });
 
-it('keeps the web frontend (and its thousands of node_modules files) out of the backend image', function () {
-    expect(preg_split('/\R/', dockerFile('.dockerignore')))->toContain('frontend');
+it('keeps the frontend\'s installed packages out of the image, but not its source (the README links to it)', function () {
+    $lines = preg_split('/\R/', dockerFile('.dockerignore'));
+
+    // Ignoring the whole folder made the README link test fail inside the container, where frontend/ was missing.
+    expect($lines)->toContain('frontend/node_modules')->toContain('frontend/dist')->not->toContain('frontend');
 });
 
 /** The text of one service in docker-compose.override.yml (the watch rules), from its name to the next service. */

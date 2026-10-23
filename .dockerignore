@@ -16,8 +16,10 @@
 vendor
 node_modules
 
-# The web frontend is built and served on its own (frontend/README.md); the backend image does not need it
-frontend
+# The web frontend is built and served on its own (frontend/README.md). Its small source files stay in the image
+# (the README links to them and the tests check those links); its installed packages and build output do not.
+frontend/node_modules
+frontend/dist
 
 # State that belongs in volumes, not in an image. The Dockerfile creates the empty folders.
 storage
