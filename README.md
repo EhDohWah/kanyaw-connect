@@ -80,6 +80,8 @@ The answer contains a token. Send it as `Authorization: Bearer <token>`, for exa
 
 On a deployed server the websocket goes through the API's own address, so the frontend uses `VITE_REVERB_HOST=api.example.org`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`.
 
+**Trying the API without a frontend.** Import [docs/postman/kanyaw-connect.postman_collection.json](docs/postman/kanyaw-connect.postman_collection.json) into Postman, Bruno or Insomnia. It has a request for every endpoint. Open the folder **0. Start here** and run **1. Log in as user1**: the token and the ids you need are saved for you, so you can click through chats, messages and rooms straight away. A test keeps the collection in step with the API.
+
 ## Using the Docker stack
 
 ```bash

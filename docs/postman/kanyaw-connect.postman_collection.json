@@ -1,0 +1,2384 @@
+{
+  "info": {
+    "name": "Karen Connect API",
+    "description": "Every endpoint of the Karen Connect backend, ready to try without a frontend.\n\n**Set up:** import this file into Postman, Bruno or Insomnia. The variable `baseUrl` is `http://localhost:8000/api/v1` (the Docker stack). Open folder **0. Start here**, run **1. Log in as user1**, and carry on: the token and the ids you need are saved in the collection variables for you.\n\n**Demo accounts** (from `docker compose up`): `user1@example.com` ... `user5@example.com`, password `password`. To act as someone else, change the `email` variable and log in again.\n\n**Lists** are cursor-paginated: after a list request, run **Next page** to load the next one.\n\nThe full contract, with every field and every real-time event, is `docs/API.md`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000/api/v1"
+    },
+    {
+      "key": "email",
+      "value": "user1@example.com"
+    },
+    {
+      "key": "password",
+      "value": "password"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "peerId",
+      "value": ""
+    },
+    {
+      "key": "chatId",
+      "value": ""
+    },
+    {
+      "key": "groupChatId",
+      "value": ""
+    },
+    {
+      "key": "messageId",
+      "value": ""
+    },
+    {
+      "key": "attachmentId",
+      "value": ""
+    },
+    {
+      "key": "expires",
+      "value": ""
+    },
+    {
+      "key": "signature",
+      "value": ""
+    },
+    {
+      "key": "thumbExpires",
+      "value": ""
+    },
+    {
+      "key": "thumbSignature",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": ""
+    },
+    {
+      "key": "deviceId",
+      "value": ""
+    },
+    {
+      "key": "subscriptionId",
+      "value": ""
+    },
+    {
+      "key": "nextUrl",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Start here (run these in order)",
+      "item": [
+        {
+          "name": "1. Log in as user1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Saves the token. Then everything else just works.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"device_name\": \"Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed in', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.token) { pm.collectionVariables.set('token', json.token); }",
+                  "if (json.user.id) { pm.collectionVariables.set('userId', json.user.id); }",
+                  "console.log('Signed in as ' + json.user.name + ' (token saved in the collection variable \"token\")');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Who am I",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Checks the token."
+          },
+          "response": []
+        },
+        {
+          "name": "3. My chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats?per_page=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "The seeded data has two direct chats and a group. Saves `chatId`, `peerId` and `groupChatId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('chats listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const direct = json.data.find(c => c.type === 'direct');",
+                  "const group = json.data.find(c => c.type === 'group');",
+                  "if (direct) { if (direct.id) { pm.collectionVariables.set('chatId', direct.id); } if (direct.other_user.id) { pm.collectionVariables.set('peerId', direct.other_user.id); } }",
+                  "if (group) { if (group.id) { pm.collectionVariables.set('groupChatId', group.id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Messages in the direct chat",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages?per_page=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Newest first. Saves `messageId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('messages listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.data.length) { if (json.data[0].id) { pm.collectionVariables.set('messageId', json.data[0].id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Send a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "Creates a message. Run it again: a new `client_id` each time gives a new message.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"type\": \"text\",\n  \"content\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('message created or returned again', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('messageId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. My rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            },
+            "description": "The seeded data has one scheduled room, linked to the group. Saves `roomId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rooms listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.data.length) { if (json.data[0].id) { pm.collectionVariables.set('roomId', json.data[0].id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Join the room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "join"
+              ]
+            },
+            "description": "user1 is the host, so this answers `admitted` with a LiveKit token (LiveKit must be running)."
+          },
+          "response": []
+        }
+      ],
+      "description": "With the demo data from `docker compose up`, log in as `user1@example.com` and run these seven requests top to bottom."
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Create an account. It does not sign the person in: call **Log in** next. Limit: 20 per hour per IP address. If the e-mail is taken you get a 422; change it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Naw Example\",\n  \"email\": \"naw.example@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\",\n  \"phone\": \"+66 81 234 5678\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Log in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Exchange e-mail and password for a bearer token. **Run this first.** It saves `token` and `userId` in the collection variables, and every other request sends the token by itself.\n\nChange the `email` variable to `user2@example.com` and log in again to act as someone else. Limit: 5 attempts a minute per e-mail and IP address.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"device_name\": \"Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed in', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.token) { pm.collectionVariables.set('token', json.token); }",
+                  "if (json.user.id) { pm.collectionVariables.set('userId', json.user.id); }",
+                  "console.log('Signed in as ' + json.user.name + ' (token saved in the collection variable \"token\")');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Log out",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes this token only. Other devices stay signed in. After this, log in again."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile and presence",
+      "item": [
+        {
+          "name": "My profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "The signed-in user, with the private fields (e-mail, phone, settings)."
+          },
+          "response": []
+        },
+        {
+          "name": "Change my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Send only what you want to change. `settings` is merged key by key. `locale` is `en`, `my` or `ksw`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Saw Eh Doh\",\n  \"timezone\": \"Asia/Bangkok\",\n  \"locale\": \"en\",\n  \"settings\": {\n    \"theme\": \"light\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload my avatar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me/avatar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "avatar"
+              ]
+            },
+            "description": "Choose a JPEG, PNG or WebP file (max 2 MB, 6000x6000 px) in the `avatar` field of the body. SVG is refused.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Heartbeat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me/heartbeat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "heartbeat"
+              ]
+            },
+            "description": "Tell the server the app is open (every 30-60 seconds while visible). Marks you online. Limit: 12 a minute. Answers 204.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"online\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Who is online",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/presence?ids[]={{userId}}&ids[]={{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "presence"
+              ],
+              "query": [
+                {
+                  "key": "ids[]",
+                  "value": "{{userId}}"
+                },
+                {
+                  "key": "ids[]",
+                  "value": "{{peerId}}"
+                }
+              ]
+            },
+            "description": "Presence of up to 100 people you share a chat with. Other ids are silently left out."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Chats",
+      "item": [
+        {
+          "name": "List my chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats?per_page=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Most recently active first, with `latest_message`, `unread_count`, `my_membership` and `other_user` for direct chats. Saves `chatId` (a direct chat), `peerId` (the other person) and `groupChatId` in the variables.\n\nThe page size is 2 here so that you can try **Next page** with the demo data (the default is 30, the most is 100)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('chats listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const direct = json.data.find(c => c.type === 'direct');",
+                  "const group = json.data.find(c => c.type === 'group');",
+                  "if (direct) { if (direct.id) { pm.collectionVariables.set('chatId', direct.id); } if (direct.other_user.id) { pm.collectionVariables.set('peerId', direct.other_user.id); } }",
+                  "if (group) { if (group.id) { pm.collectionVariables.set('groupChatId', group.id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Next page (any list)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{nextUrl}}",
+              "host": [
+                "{{nextUrl}}"
+              ]
+            },
+            "description": "After a list request, `nextUrl` holds `links.next`: send this to load the next page. If there is no next page it is empty and Postman says the URL is empty: you have reached the end."
+          },
+          "response": []
+        },
+        {
+          "name": "Start or reopen a direct chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/direct",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "direct"
+              ]
+            },
+            "description": "There is only one plain direct chat between two people: 201 for a new one, 200 for the existing one.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{peerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create a group chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/group",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "group"
+              ]
+            },
+            "description": "Leave yourself out of `member_ids`: you become the owner. Saves `groupChatId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Community committee\",\n  \"description\": \"Planning and announcements\",\n  \"member_ids\": [\n    \"{{peerId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('group created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('groupChatId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get a chat (with members)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}"
+              ]
+            },
+            "description": "One chat with its full `members` list."
+          },
+          "response": []
+        },
+        {
+          "name": "Rename a group",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{groupChatId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{groupChatId}}"
+              ]
+            },
+            "description": "Group owner or admins only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Committee (renamed)\",\n  \"description\": \"New description\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark read up to a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "read"
+              ]
+            },
+            "description": "The read position only moves forward.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message_id\": \"{{messageId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Group members",
+      "item": [
+        {
+          "name": "Add people to a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{groupChatId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{groupChatId}}",
+                "members"
+              ]
+            },
+            "description": "Owner or admins. 1-50 ids.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_ids\": [\n    \"{{peerId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change a member role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{groupChatId}}/members/{{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{groupChatId}}",
+                "members",
+                "{{peerId}}"
+              ]
+            },
+            "description": "Owner only. `admin` or `member`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove a member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{groupChatId}}/members/{{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{groupChatId}}",
+                "members",
+                "{{peerId}}"
+              ]
+            },
+            "description": "Owner can remove anyone; admins can remove plain members. Answers 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Leave a group",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{groupChatId}}/leave",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{groupChatId}}",
+                "leave"
+              ]
+            },
+            "description": "Run this last: afterwards you are no longer in the group, so the requests above stop working for it. Direct chats cannot be left. Answers 204."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Attachments",
+      "item": [
+        {
+          "name": "Upload a file",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "attachments"
+              ]
+            },
+            "description": "Choose a file (max 25 MB) in the `file` field of the body. Saves `attachmentId`, and the `expires` and `signature` of its signed URL.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('uploaded', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('attachmentId', obj.id); }",
+                  "const param = (name) => ((obj.url || '').match(new RegExp('[?&]' + name + '=([^&]+)')) || [])[1];",
+                  "if (param('expires')) { pm.collectionVariables.set('expires', param('expires')); }",
+                  "if (param('signature')) { pm.collectionVariables.set('signature', param('signature')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download a file (signed URL)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/attachments/{{attachmentId}}/file?expires={{expires}}&signature={{signature}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "attachments",
+                "{{attachmentId}}",
+                "file"
+              ],
+              "query": [
+                {
+                  "key": "expires",
+                  "value": "{{expires}}"
+                },
+                {
+                  "key": "signature",
+                  "value": "{{signature}}"
+                }
+              ]
+            },
+            "description": "No bearer token: the signature in the URL is the permission. Valid 60 minutes. Uses `expires` and `signature` saved by **Upload a file**.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Upload first: the message that uses the file is in the Messages folder."
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "List messages (newest first)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages?per_page=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Newest first, cursor-paginated. Saves `messageId` (the newest) and `nextUrl`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('messages listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.data.length) { if (json.data[0].id) { pm.collectionVariables.set('messageId', json.data[0].id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send a text message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "`client_id` is your idempotency key: send the same one again and you get 200 with the original message instead of a duplicate. (Postman makes a new one on every send with `{{$guid}}`.) Limit: 30 a minute.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"type\": \"text\",\n  \"content\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('message created or returned again', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('messageId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send a reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "Replies to the message in `messageId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"type\": \"text\",\n  \"content\": \"A reply\",\n  \"reply_to_id\": \"{{messageId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('message created or returned again', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('messageId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send an image message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "First **Upload a file** (saves `attachmentId`), then send it. `type` is `image`, `file` or `voice`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{$guid}}\",\n  \"type\": \"image\",\n  \"content\": \"The agenda\",\n  \"metadata\": {\n    \"attachment_id\": \"{{attachmentId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('message created or returned again', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('messageId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get one message",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Also the way to get fresh attachment links. For an image message it saves the thumbnail link (`thumbExpires`, `thumbSignature`) for **Download a thumbnail**."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "const thumb = ((obj.attachment || {}).thumbnail_url || '');",
+                  "const tp = (name) => (thumb.match(new RegExp('[?&]' + name + '=([^&]+)')) || [])[1];",
+                  "if (tp('expires')) { pm.collectionVariables.set('thumbExpires', tp('expires')); }",
+                  "if (tp('signature')) { pm.collectionVariables.set('thumbSignature', tp('signature')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download a thumbnail (signed URL)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/attachments/{{attachmentId}}/thumbnail?expires={{thumbExpires}}&signature={{thumbSignature}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "attachments",
+                "{{attachmentId}}",
+                "thumbnail"
+              ],
+              "query": [
+                {
+                  "key": "expires",
+                  "value": "{{thumbExpires}}"
+                },
+                {
+                  "key": "signature",
+                  "value": "{{thumbSignature}}"
+                }
+              ]
+            },
+            "description": "The thumbnail has its own signed link, different from the file's: run **Send an image message** and then **Get one message** first, which save it. Images only, and only a few moments after the upload (the thumbnail is made in the background).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Edit a message",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "The sender, within 24 hours.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Edited text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a message",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "The sender, or a group owner or admin. Answers 204."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Video rooms",
+      "item": [
+        {
+          "name": "List my rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms?filter=upcoming",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms"
+              ],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "upcoming",
+                  "description": "optional: hosting, invited or upcoming"
+                }
+              ]
+            },
+            "description": "Rooms that have not ended. Saves `roomId` (the first). `filter` is `hosting`, `invited` or `upcoming`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rooms listed', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.data.length) { if (json.data[0].id) { pm.collectionVariables.set('roomId', json.data[0].id); } }",
+                  "pm.collectionVariables.set('nextUrl', json.links.next || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create an instant room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            },
+            "description": "You become the host. Saves `roomId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Quick call\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('room created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('roomId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a scheduled room (chat, password, waiting room)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            },
+            "description": "Linking `chat_id` (here the direct chat) invites everyone in that chat and posts a message there. `scheduled_at` must be in the future: change it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Committee meeting\",\n  \"description\": \"Monthly planning call\",\n  \"chat_id\": \"{{chatId}}\",\n  \"password\": \"open-sesame\",\n  \"waiting_room_enabled\": true,\n  \"max_participants\": 20,\n  \"scheduled_at\": \"2030-01-01T09:00:00+00:00\",\n  \"duration_minutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('room created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj.id) { pm.collectionVariables.set('roomId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get a room",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}"
+              ]
+            },
+            "description": "The host and co-hosts also get `waiting_participants`."
+          },
+          "response": []
+        },
+        {
+          "name": "Join a room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "join"
+              ]
+            },
+            "description": "Answers `{status: \"admitted\", token, livekit_url, room}` or `{status: \"waiting\"}`. `password` is needed only for a protected room you were not let into yet. Limit: 20 a minute.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"open-sesame\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Room controls (host and co-hosts)",
+      "item": [
+        {
+          "name": "Admit a waiting person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/admit/{{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "admit",
+                "{{peerId}}"
+              ]
+            },
+            "description": "Host or co-host. The person must have asked to join: in a room with a waiting room, log in as them (change `email`) and run **Join a room**, then log in as the host again. Otherwise 404."
+          },
+          "response": []
+        },
+        {
+          "name": "Deny a waiting person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/deny/{{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "deny",
+                "{{peerId}}"
+              ]
+            },
+            "description": "Host or co-host. Only for people who are waiting (404 if they never asked to join, 409 `not_waiting` otherwise)."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove someone from the call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/participants/{{peerId}}/remove",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "participants",
+                "{{peerId}}",
+                "remove"
+              ]
+            },
+            "description": "Host or co-host. The person must be in the room (404 otherwise). Answers 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Mute someone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/participants/{{peerId}}/mute",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "participants",
+                "{{peerId}}",
+                "mute"
+              ]
+            },
+            "description": "`kind` is `audio` (default) or `video`. 409 `participant_not_connected` if they are not in the call.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"audio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Make someone a co-host",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/co-hosts/{{peerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "co-hosts",
+                "{{peerId}}"
+              ]
+            },
+            "description": "Host only. The person must be admitted to the room (404 otherwise)."
+          },
+          "response": []
+        },
+        {
+          "name": "Lock the room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "lock"
+              ]
+            },
+            "description": "Host only."
+          },
+          "response": []
+        },
+        {
+          "name": "Unlock the room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "unlock"
+              ]
+            },
+            "description": "Host only."
+          },
+          "response": []
+        },
+        {
+          "name": "End the meeting for everyone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/end",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "end"
+              ]
+            },
+            "description": "Host only."
+          },
+          "response": []
+        },
+        {
+          "name": "Audit log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{roomId}}/audit-log",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{roomId}}",
+                "audit-log"
+              ]
+            },
+            "description": "What the host and co-hosts did. Host only. Cursor-paginated."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Encryption: devices and keys",
+      "item": [
+        {
+          "name": "Register a device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            },
+            "description": "Needs 20-100 one-time prekeys and a signature that verifies, so this example body is rejected with a 422 on purpose: real keys must be made by a client. Shown here for the shape.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pixel 7\",\n  \"identity_public_key\": \"2dC1AxOZriYejXJpv4fMNjnpvFrfh5ELwymUCZSTNck=\",\n  \"exchange_public_key\": \"5bCi+WAfYmZ4hKbti67C8AOdX/weLOT7eBAN3/GCm0Y=\",\n  \"signed_prekey\": {\n    \"id\": 1,\n    \"public_key\": \"LT78lV3PTPtUctWE0oxS3ERZtz35Z9H9m+t5bwBxK0k=\",\n    \"signature\": \"i0fjqbl9Tw7NA2ItQMSirgNSUkf6SJKICh/MRdWsegrJ7melC8hUVu+3JFSuXyKDK3Tj3jx4s8W4yVvfP2psAQ==\"\n  },\n  \"one_time_prekeys\": [\n    {\n      \"id\": 1,\n      \"public_key\": \"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\"\n    },\n    {\n      \"id\": 2,\n      \"public_key\": \"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\"\n    },\n    {\n      \"id\": 3,\n      \"public_key\": \"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=\"\n    },\n    {\n      \"id\": 4,\n      \"public_key\": \"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=\"\n    },\n    {\n      \"id\": 5,\n      \"public_key\": \"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=\"\n    },\n    {\n      \"id\": 6,\n      \"public_key\": \"BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=\"\n    },\n    {\n      \"id\": 7,\n      \"public_key\": \"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=\"\n    },\n    {\n      \"id\": 8,\n      \"public_key\": \"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=\"\n    },\n    {\n      \"id\": 9,\n      \"public_key\": \"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=\"\n    },\n    {\n      \"id\": 10,\n      \"public_key\": \"CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=\"\n    },\n    {\n      \"id\": 11,\n      \"public_key\": \"CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=\"\n    },\n    {\n      \"id\": 12,\n      \"public_key\": \"DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=\"\n    },\n    {\n      \"id\": 13,\n      \"public_key\": \"DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=\"\n    },\n    {\n      \"id\": 14,\n      \"public_key\": \"Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4=\"\n    },\n    {\n      \"id\": 15,\n      \"public_key\": \"Dw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8=\"\n    },\n    {\n      \"id\": 16,\n      \"public_key\": \"EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA=\"\n    },\n    {\n      \"id\": 17,\n      \"public_key\": \"ERERERERERERERERERERERERERERERERERERERERERE=\"\n    },\n    {\n      \"id\": 18,\n      \"public_key\": \"EhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhI=\"\n    },\n    {\n      \"id\": 19,\n      \"public_key\": \"ExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExM=\"\n    },\n    {\n      \"id\": 20,\n      \"public_key\": \"FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ=\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "const device = Array.isArray(obj) ? obj[0] : obj;",
+                  "if (device) { if (device.id) { pm.collectionVariables.set('deviceId', device.id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            },
+            "description": "Your active encryption devices (public keys only)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "const device = Array.isArray(obj) ? obj[0] : obj;",
+                  "if (device) { if (device.id) { pm.collectionVariables.set('deviceId', device.id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke a device",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/{{deviceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "{{deviceId}}"
+              ]
+            },
+            "description": "Needs `deviceId`: register a device first (see the folder note). Answers 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Rotate the signed prekey",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/{{deviceId}}/signed-prekey",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "{{deviceId}}",
+                "signed-prekey"
+              ]
+            },
+            "description": "Needs a new id and a valid signature.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 2,\n  \"public_key\": \"LT78lV3PTPtUctWE0oxS3ERZtz35Z9H9m+t5bwBxK0k=\",\n  \"signature\": \"i0fjqbl9Tw7NA2ItQMSirgNSUkf6SJKICh/MRdWsegrJ7melC8hUVu+3JFSuXyKDK3Tj3jx4s8W4yVvfP2psAQ==\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add one-time prekeys",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/{{deviceId}}/prekeys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "{{deviceId}}",
+                "prekeys"
+              ]
+            },
+            "description": "1-100 at a time.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prekeys\": [\n    {\n      \"id\": 21,\n      \"public_key\": \"O0THY0LBrJBBpBiFkmlAkjrRF/L6zEWwQHK16HMsPgY=\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Count unclaimed prekeys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/{{deviceId}}/prekeys/count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "{{deviceId}}",
+                "prekeys",
+                "count"
+              ]
+            },
+            "description": "Top up when this drops below about 10."
+          },
+          "response": []
+        },
+        {
+          "name": "Get key bundles of a person",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{peerId}}/key-bundles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{peerId}}",
+                "key-bundles"
+              ]
+            },
+            "description": "One bundle per active device, each with one one-time prekey that is handed out exactly once. Limit: 10 a minute per person."
+          },
+          "response": []
+        }
+      ],
+      "description": "The server stores public keys only. These requests need keys made by a client; see section 5 of docs/API.md."
+    },
+    {
+      "name": "Push notifications",
+      "item": [
+        {
+          "name": "Push public key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/public-key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "public-key"
+              ]
+            },
+            "description": "`enabled: false` means the server has no push keys."
+          },
+          "response": []
+        },
+        {
+          "name": "Register this browser for push",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/subscriptions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "subscriptions"
+              ]
+            },
+            "description": "The body is a browser's `subscription.toJSON()`. This example is refused unless the endpoint is a real push service address and the keys have the right sizes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/dAbC12-example\",\n  \"expirationTime\": null,\n  \"keys\": {\n    \"p256dh\": \"BAfdcVBP-fIMUGvJlOfSrSCDj-NTJ2XMt1kkyizswjqAxWAEf-crQpQhIYd4Ub4T3ieZHTKURw8mlOSuUOF9GLA\",\n    \"auth\": \"1rY-tSBOKoGQ7yb_puqBpw\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "const sub = Array.isArray(obj) ? obj[0] : obj;",
+                  "if (sub) { if (sub.id) { pm.collectionVariables.set('subscriptionId', sub.id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my push subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/subscriptions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "subscriptions"
+              ]
+            },
+            "description": "One per browser."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "const sub = Array.isArray(obj) ? obj[0] : obj;",
+                  "if (sub) { if (sub.id) { pm.collectionVariables.set('subscriptionId', sub.id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove a push subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/subscriptions/{{subscriptionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "subscriptions",
+                "{{subscriptionId}}"
+              ]
+            },
+            "description": "Answers 204."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Real-time",
+      "item": [
+        {
+          "name": "Authorise a WebSocket channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/broadcasting/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "broadcasting",
+                "auth"
+              ]
+            },
+            "description": "What Laravel Echo calls for you. `socket_id` comes from a real WebSocket connection, so this only works with a real id. Channels: `private-user.{id}`, `private-chat.{id}`, `presence-chat.{id}`, `presence-room.{id}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"socket_id\": \"123456.789012\",\n  \"channel_name\": \"private-user.{{userId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
