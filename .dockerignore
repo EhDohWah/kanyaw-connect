@@ -16,6 +16,9 @@
 vendor
 node_modules
 
+# The web frontend is built and served on its own (frontend/README.md); the backend image does not need it
+frontend
+
 # State that belongs in volumes, not in an image. The Dockerfile creates the empty folders.
 storage
 bootstrap/cache/*

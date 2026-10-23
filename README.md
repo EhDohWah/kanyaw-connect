@@ -2,7 +2,7 @@
 
 The backend for **Karen Connect**, a private chat and video-meeting app for a Karen community organisation. Many of its users are on slow or unstable mobile connections along the Thai–Myanmar border, so the API keeps payloads small, paginates every list, and makes every send safe to retry. Privacy is a core requirement: in end-to-end encrypted chats the server never sees message content.
 
-This repository is the API only. The frontend is a separate Vue 3 project that talks to it. **[docs/API.md](docs/API.md) is the contract with that frontend**: every endpoint, every real-time event, with examples.
+This repository holds the API (the Laravel app in the root folder) and the web frontend that talks to it (a Vue 3 app in [frontend/](frontend/), built in phases: see [frontend/PROGRESS.md](frontend/PROGRESS.md)). **[docs/API.md](docs/API.md) is the contract between them**: every endpoint, every real-time event, with examples.
 
 | | |
 |---|---|
@@ -81,6 +81,8 @@ The answer contains a token. Send it as `Authorization: Bearer <token>`, for exa
 On a deployed server the websocket goes through the API's own address, so the frontend uses `VITE_REVERB_HOST=api.example.org`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`.
 
 **Trying the API without a frontend.** Import [docs/postman/kanyaw-connect.postman_collection.json](docs/postman/kanyaw-connect.postman_collection.json) into Postman, Bruno or Insomnia. It has a request for every endpoint. Open the folder **0. Start here** and run **1. Log in as user1**: the token and the ids you need are saved for you, so you can click through chats, messages and rooms straight away. A test keeps the collection in step with the API.
+
+**The web frontend.** With the stack above running, `cd frontend && cp .env.example .env && npm install && npm run dev` opens it at <http://localhost:5173> (sign in as `user1@example.com`, password `password`). See [frontend/README.md](frontend/README.md).
 
 ## Using the Docker stack
 
@@ -462,6 +464,7 @@ app/Console/              artisan commands (scheduled housekeeping, VAPID keys)
 config/                   chat, rooms, e2ee, push, cleanup, security, cors, services (LiveKit)
 database/                 migrations (UUID keys), factories, seeder
 docs/API.md              the API contract for the frontend
+frontend/                the web app (Vue 3, Vite, Tailwind): its own README, tests and PROGRESS.md
 tests/                    Feature (every endpoint), Unit (source scans, helpers), Integration (real parallel processes)
 ```
 

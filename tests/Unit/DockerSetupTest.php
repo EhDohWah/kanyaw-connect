@@ -115,6 +115,10 @@ it('never puts a secret or a local settings file into the image', function () {
         ->and(dockerFile('.gitignore'))->toContain('/docker/livekit/livekit.production.yaml');
 });
 
+it('keeps the web frontend (and its thousands of node_modules files) out of the backend image', function () {
+    expect(preg_split('/\R/', dockerFile('.dockerignore')))->toContain('frontend');
+});
+
 /** The text of one service in docker-compose.override.yml (the watch rules), from its name to the next service. */
 function composeServiceBlock(string $name): string
 {

@@ -1,0 +1,118 @@
+# Kanyaw Connect: web frontend
+
+The web app for Kanyaw Connect: private chat, community feed and video meetings for the Karen community. It is a
+single-page app (Vue 3) that talks to the Laravel API in the parent folder. Build progress is tracked in
+[`PROGRESS.md`](PROGRESS.md); the API it follows is [`../docs/API.md`](../docs/API.md).
+
+> **Status:** Phase 1 of 5 (foundation): sign in and register, the responsive shell, profile with photo, presence.
+> Chats, the feed and meetings are placeholders until their phases.
+
+## Run it
+
+You need Node.js 22.18 or newer (or 24.12+) and the backend running.
+
+```bash
+# 1. The backend (in the repository root): API on http://localhost:8000, real-time on :8080
+docker compose up
+
+# 2. The frontend (in this folder)
+cp .env.example .env
+npm install
+npm run dev          # http://localhost:5173
+```
+
+Sign in with a demo account: `user1@example.com` to `user5@example.com`, password `password`.
+
+The backend must allow this origin. `CORS_ALLOWED_ORIGINS` (it defaults to `FRONTEND_URL`, which is
+`http://localhost:5173` in the backend's `.env.example`) is already right for `npm run dev`; use the same port. The
+dev server refuses to start on another port (`strictPort`) rather than silently picking one the backend does not allow.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server with hot reload |
+| `npm run build` | Type-check, then build to `dist/` |
+| `npm run type-check` | TypeScript and Vue templates, no build |
+| `npm run test` | All unit and component tests once (`npm run test:watch` keeps running) |
+| `npm run i18n:sync` | Add keys that are new in `en.json` to `my.json` and `ksw.json` |
+| `npm run preview` | Serve the built `dist/` locally |
+
+## Settings (`.env`)
+
+All are read at build time, and are public (they end up in the browser): never put a secret here.
+
+| Variable | Meaning |
+|---|---|
+| `VITE_API_BASE_URL` | The API, including `/api/v1`, no trailing slash |
+| `VITE_REVERB_APP_KEY` | Reverb app key (public; it only identifies the application). Used from Phase 2 |
+| `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Where the WebSocket server is, `http` or `https`. Used from Phase 2 |
+| `VITE_FEED_SOURCE` | `mock` (sample posts) or `api` (when the backend has a feed). Used from Phase 3 |
+
+The LiveKit address is not configured here: the API sends it when a meeting is joined.
+
+## How it is organised
+
+```
+src/
+  api/          one typed module per resource; http.ts is the only place that uses axios
+  components/   layout/ (shell, navigation), common/ (buttons, inputs, dialog, avatar, states)
+  composables/  logic shared between components (heartbeat, online status)
+  i18n/         en.json (complete), my.json and ksw.json (same keys, to be translated)
+  router/       routes and sign-in guards
+  stores/       Pinia: auth, ui
+  types/        types that mirror the objects in docs/API.md
+  utils/        small helpers (device name, initials, image shrinking, redirects, focus trap)
+  views/        one file per page
+  style.css     the design tokens (the only place colours are defined)
+```
+
+Tests sit in `__tests__/` folders next to the code they test. They run the real API client, router, stores and components
+and replace only the network (`src/__tests__/helpers.ts`).
+
+## Look and feel
+
+Colours are tokens in `src/style.css` (`@theme`). The default Tailwind palette is switched off on purpose, so only these
+can be used: `bg`, `surface`, `border`, `text`, `text-muted`, `primary`, `primary-hover`, `primary-soft`, `danger`,
+`call-bg`, `call-surface`, plus a few helpers (`on-primary`, `danger-soft`, `success`, `on-call`, eight `avatar-*`).
+To change the look of the whole app, change a value there.
+
+## Languages
+
+English is complete. Burmese (`my`) and S'gaw Karen (`ksw`) have the same keys but are not translated yet: untranslated
+text shows in English. To translate, edit `src/i18n/my.json` and `src/i18n/ksw.json`. After adding a text to `en.json`,
+run `npm run i18n:sync`; a test fails if the three files do not have the same keys. In message texts avoid the
+characters `{ } @ |` (they have a special meaning in `vue-i18n`).
+
+Burmese and S'gaw Karen use Noto Sans Myanmar, loaded from Google Fonts (`index.html`). That request goes to Google, so
+self-host the font if that matters to you. Under a strict Content-Security-Policy the font link's inline `onload`
+handler would need a nonce or to move into `main.ts`.
+
+## Sign-in and sessions
+
+The API uses bearer tokens, not cookies. The token (valid 30 days, not extended by use) is kept in `localStorage`, sent in
+the `Authorization` header, and never logged. When the server says the token is no longer valid the person is sent to the
+login screen with the reason, and returns to the page they were on after signing in again. Signing out revokes this
+device's token on the server.
+
+## Not connected to the backend yet
+
+These parts of the product have no backend yet, or are not built yet:
+
+| Feature | State |
+|---|---|
+| Feed, posts, likes, comments, shares | The backend has no endpoints. Built with sample data in Phase 3 |
+| Chats and messages | Backend ready; screens arrive in Phase 2 |
+| Meetings and video | Backend ready; screens arrive in Phase 4 |
+| Push notifications | Backend ready; arrive in Phase 5 |
+| "Forgot password", changing the password, email verification | The backend has no endpoints |
+| Finding people you share no chat with | The backend has no user search |
+| Group photos, muting, archiving, pinning chats | The backend has no endpoints to change them |
+| Editing or cancelling a scheduled meeting | The backend can only end it |
+| End-to-end encrypted chats | The backend is ready; the client-side cryptography is a separate project |
+
+## Deploying
+
+`npm run build` produces static files in `dist/`. Serve them from any static host, with a rule that answers every unknown
+path with `index.html` (the app uses real URLs, not `#`). On the backend set `FRONTEND_URL` and `CORS_ALLOWED_ORIGINS` to
+the app's address, and `REVERB_ALLOWED_ORIGINS` to its host name.
