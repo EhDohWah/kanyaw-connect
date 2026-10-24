@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMessage, makeUser, page, restoreApi, signIn, type Call, type Reply } from '@/__tests__/helpers'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
-import { useMessagesStore } from '@/stores/messages'
+import { useDraftsStore } from '@/stores/drafts'
+import { LINK_REFRESH_GAP_MS, useMessagesStore } from '@/stores/messages'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -535,5 +536,113 @@ describe('signing out', () => {
 
     expect(messages.timeline(CHAT_ID)).toBeUndefined()
     expect(URL.revokeObjectURL).toHaveBeenCalled()
+  })
+})
+
+describe('fresh attachment links', () => {
+  const withFile = (url: string) => makeMessage({ id: 'img-1', type: 'image', attachment: { id: 'a1', original_name: 'p.png', mime_type: 'image/png', size: 10, url, thumbnail_url: url, created_at: 'x' } })
+
+  it('asks for the message again and shows its fresh links', async () => {
+    const { calls } = fakeApi((call) => (call.url === '/messages/img-1' ? { data: { data: withFile('https://x/new') } } : { data: page([withFile('https://x/old')]) }))
+    const messages = useMessagesStore()
+    await messages.loadInitial(CHAT_ID)
+
+    await messages.refreshAttachment(withFile('https://x/old'))
+
+    expect(calls.filter((c) => c.url === '/messages/img-1')).toHaveLength(1)
+    expect(messagesIn()[0]?.attachment?.url).toBe('https://x/new')
+  })
+
+  it('does not ask again right away (a file that is really gone must not cause a stream of requests), but does after a while', async () => {
+    vi.useFakeTimers()
+    const { calls } = fakeApi(() => ({ data: { data: withFile('https://x/new') } }))
+    const messages = useMessagesStore()
+    messages.reset() // the times of earlier refreshes are kept for the whole session
+
+    await messages.refreshAttachment(withFile('https://x/old'))
+    await messages.refreshAttachment(withFile('https://x/new'))
+    expect(calls).toHaveLength(1)
+
+    vi.advanceTimersByTime(LINK_REFRESH_GAP_MS)
+    await messages.refreshAttachment(withFile('https://x/new'))
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe('a message deleted while the box points at it', () => {
+  it('leaves edit mode and empties the box when the message being edited is deleted (elsewhere, or by an admin)', () => {
+    const messages = useMessagesStore()
+    const draft = useDraftsStore().get(CHAT_ID)
+    draft.editingId = 'm-1'
+    draft.text = 'my edit'
+
+    messages.receiveDeleted(CHAT_ID, 'm-1')
+
+    expect(draft.editingId).toBeNull()
+    expect(draft.text).toBe('')
+  })
+
+  it('drops the reply to a deleted message, and keeps what was typed', () => {
+    const messages = useMessagesStore()
+    const draft = useDraftsStore().get(CHAT_ID)
+    draft.replyToId = 'm-1'
+    draft.text = 'my answer'
+
+    messages.receiveDeleted(CHAT_ID, 'm-1')
+
+    expect(draft.replyToId).toBeNull()
+    expect(draft.text).toBe('my answer')
+  })
+
+  it('leaves a box that points at another message alone', () => {
+    const messages = useMessagesStore()
+    const draft = useDraftsStore().get(CHAT_ID)
+    draft.editingId = 'm-2'
+    draft.text = 'still editing'
+
+    messages.receiveDeleted(CHAT_ID, 'm-1')
+
+    expect(draft.editingId).toBe('m-2')
+    expect(draft.text).toBe('still editing')
+  })
+})
+
+describe('a deleted message stays deleted', () => {
+  it('is not brought back by a late copy of its "sent" or "updated" event', async () => {
+    const target = makeMessage({ id: 'gone', content: 'oops' })
+    fakeApi(() => ({ data: page([target]) }))
+    const messages = useMessagesStore()
+    await messages.loadInitial(CHAT_ID)
+
+    messages.receiveDeleted(CHAT_ID, 'gone')
+    messages.receive(target)
+    messages.receiveUpdate({ ...target, content: 'edited', is_edited: true, edited_at: '2026-03-14T10:00:00Z' })
+
+    expect(messagesIn().map((m) => m.id)).not.toContain('gone')
+  })
+
+  it('is not added back by a page that was fetched before the deletion', async () => {
+    const target = makeMessage({ id: 'gone', content: 'oops', created_at: '2026-03-14T08:00:00.000000Z' })
+    const other = makeMessage({ id: 'kept', content: 'fine', created_at: '2026-03-14T09:00:00.000000Z' })
+    fakeApi((call) => (call.uri.includes('cursor') ? { data: page([target]) } : { data: page([other], 'http://api.test/api/v1/chats/x/messages?cursor=older') }))
+    const messages = useMessagesStore()
+    await messages.loadInitial(CHAT_ID)
+
+    messages.receiveDeleted(CHAT_ID, 'gone')
+    await messages.loadOlder(CHAT_ID)
+
+    expect(messagesIn().map((m) => m.id)).toEqual(['kept'])
+  })
+
+  it('forgets what was deleted when the person signs out', async () => {
+    const target = makeMessage({ id: 'gone' })
+    fakeApi(() => ({ data: page([target]) }))
+    const messages = useMessagesStore()
+    messages.receiveDeleted(CHAT_ID, 'gone')
+
+    messages.reset()
+    await messages.loadInitial(CHAT_ID)
+
+    expect(messagesIn().map((m) => m.id)).toEqual(['gone'])
   })
 })

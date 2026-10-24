@@ -17,6 +17,7 @@ import { usePresenceStore } from '@/stores/presence'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
+import { useUiStore } from '@/stores/ui'
 
 const Host = defineComponent({
   setup() {
@@ -361,5 +362,33 @@ describe('what the sidebar needs', () => {
     await flushPromises()
 
     expect(count(calls, '/rooms')).toBe(0)
+  })
+})
+
+describe('what belongs to one person', () => {
+  it('closes the chat drawer and forgets which chat it showed when the person signs out', async () => {
+    serve()
+    const wrapper = await start()
+    const ui = useUiStore()
+    ui.openDrawer(CHAT_ID)
+    ui.newChatOpen = true
+
+    wrapper.unmount()
+
+    expect(ui.drawer).toEqual({ open: false, chatId: null })
+    expect(JSON.parse(window.localStorage.getItem('kc.drawer') ?? '{}')).toEqual({ open: false, chatId: null })
+    expect(ui.newChatOpen).toBe(false)
+  })
+
+  it('ends someone’s "is typing" as soon as their message arrives (the "stopped" whisper may have been lost)', async () => {
+    serve()
+    await start()
+    const typing = useTypingStore()
+    typing.receive(CHAT_ID, PAW, true)
+    expect(typing.typingUserIds(CHAT_ID)).toEqual([PAW])
+
+    lastEcho().get(`private-user.${ME}`)!.emit('.message.sent', { message: makeMessage({ sender_id: PAW, content: 'Here it is' }) })
+
+    expect(typing.typingUserIds(CHAT_ID)).toEqual([])
   })
 })

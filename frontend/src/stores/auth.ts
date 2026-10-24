@@ -3,12 +3,16 @@ import { computed, ref } from 'vue'
 
 import * as authApi from '@/api/auth'
 import { isApiError } from '@/api/errors'
+import { setTokenProvider } from '@/api/http'
 import * as meApi from '@/api/me'
 import { clearStoredSession, getToken, getTokenExpiry, saveSession } from '@/api/tokenStorage'
 import { isAppLocale, setLocale, type AppLocale } from '@/i18n'
 import type { ApiError } from '@/api/errors'
 import type { ProfilePatch, RegisterInput, User } from '@/types/user'
 import { describeDevice } from '@/utils/deviceName'
+
+/** `expired`: the server refused the token (or it ran out). `elsewhere`: signed out in another tab or window. */
+export type SignOutReason = 'expired' | 'elsewhere'
 
 /** True when the stored token has a known expiry that has already passed. */
 function expired(expiresAt: string | null, now: number = Date.now()): boolean {
@@ -22,8 +26,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   /** Set when the stored session could not be checked because the server was unreachable (not because it was refused). */
   const bootError = ref<ApiError | null>(null)
-  /** Why the person was signed out without asking to be: shown once on the login screen. */
-  const endedReason = ref<'expired' | null>(null)
+  /** Why the person was signed out without asking to be (here, or in another tab): shown once on the login screen. */
+  const endedReason = ref<SignOutReason | null>(null)
 
   const isAuthenticated = computed(() => token.value !== null)
 
@@ -46,9 +50,13 @@ export const useAuthStore = defineStore('auth', () => {
     if (isAppLocale(next.locale)) setLocale(next.locale)
   }
 
-  /** Forgets the session on this device. Does not call the server: use `logout` for that. */
-  function clearSession(reason: 'expired' | null = null): void {
-    clearStoredSession()
+  /**
+   * Forgets the session on this device. Does not call the server: use `logout` for that. What is stored is only removed
+   * when it is still this tab's session: another tab may have signed in since, and its session is not ours to end.
+   */
+  function clearSession(reason: SignOutReason | null = null): void {
+    const stored = getToken()
+    if (stored === null || stored === token.value) clearStoredSession()
     token.value = null
     user.value = null
     bootError.value = null
@@ -135,6 +143,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   restoreSession()
+  // Requests carry the session this tab holds, whatever another tab writes to storage meanwhile.
+  setTokenProvider(() => token.value)
 
   return {
     token,

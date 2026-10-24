@@ -7,8 +7,8 @@ item they belong to.
 | Phase | Status |
 |---|---|
 | 1. Foundation | Done, approved |
-| 2. Messaging | Done, waiting for review |
-| 3. Feed and sidebar | Done, waiting for review |
+| 2. Messaging | Done, approved |
+| 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), waiting for approval |
 | 4. Video | Not started |
 | 5. Push and polish | Not started |
 
@@ -402,6 +402,83 @@ item they belong to.
   collapsed tab does not: the sidebar leaves room for it). This follows the layout in the prompt; collapsing the drawer
   brings the sidebar back.
 - Nothing blocked the phase.
+
+## Review after Phase 3 (before Phase 4)
+
+A full pass over Phases 1–3 before starting video: analysis, testing, fixes. No new features.
+
+### How it was done
+
+- Every source file was read against `docs/API.md`; every route the app calls exists with the shape the app expects.
+- A suspected bug was first reproduced, then fixed with a test that fails without the fix. Four were reproduced in a real
+  browser (two tabs, two people, a refused picture link), the Karen date one in Node.
+
+### Bugs found and fixed
+
+1. **High: two tabs share one sign-in.** All tabs of a browser keep the sign-in in the same `localStorage`. Signing out in
+   one tab left the others on screen with a dead session, and signing in as someone else in one tab made a second tab (still
+   showing the first person) act as the new person. Reproduced: a message typed on Eh Doh's screen was sent as Naw Paw Say.
+   Now each tab sends with the sign-in it shows (`setTokenProvider`) and the tabs listen to each other (`installSessionSync`):
+   - signed out in another tab → this tab goes to the sign-in page and says "You signed out in another tab or window.";
+   - signed in in another tab → this tab reloads as that person and comes back to the page it was on (a signed-in visitor of
+     the sign-in page now goes on to its `redirect`, checked by `safeRedirect`, instead of always to Home);
+   - a 401 only ends the session when it was for this tab's token, and ending a session never removes a newer sign-in that
+     another tab stored.
+2. **Medium: attachment links that ran out.** The server signs links for 60 minutes and a chat can stay open longer. A broken
+   picture asked for fresh links only once per page load and stayed "Photo unavailable" even after they came; the full-size
+   viewer kept the old link; a download with an old link opened an error page. Now a broken picture is drawn again with the
+   fresh links, links can be refreshed again after 5 minutes, the viewer reads the message from the timeline, and a click on an
+   expired download asks for fresh links and **saves the file from the page** (`saveFile`: fetch, then save under its own
+   name). It is not opened in this tab (pictures are shown inline and would replace the app) and not in a new tab (blocked
+   once the click is over, and Chromium left an empty tab behind for real downloads).
+3. **Medium: deleted messages coming back.** A late "sent" or "edited" event, or an older page or resync answer that was
+   already on its way, could put a deleted message back on screen. The store now remembers deleted messages for the session
+   and ignores late copies.
+4. **Medium: editing or replying to a message someone deleted.** The box kept the edited text with no message to edit, so
+   pressing Send posted it as a new message; a reply kept pointing at the deleted message. Deleting now ends the edit (like
+   Cancel) and drops the reply; leaving a chat clears its draft.
+5. **Medium (privacy): the next person on the same browser** landed in the previous person's chat drawer, and dialogs could
+   stay open. Signing out now closes the drawer and the dialogs.
+6. **Low: "Show more chats" failing** replaced the whole list with the error screen. The error now shows under the button
+   (`loadMoreError`) and the list stays.
+7. **Low: adding more than 50 people to a group at once** failed (the API takes 50 per request). They are sent in groups of 50.
+8. **Low: scrolling.** A message arriving just before your own pending one made the list stop following what you sent, and
+   after older messages loaded the top marker was not watched again (if it stayed in view, no more pages loaded). Both fixed.
+9. **Low: "is typing…" stayed** for a few seconds after that person's message arrived. The message now clears it.
+10. **Low: Karen (`ksw`) dates.** Browsers have no date data for `ksw`, so dates came out in whatever the browser's default
+    was. `dateLocale()` now falls back to English for a language the browser lacks.
+11. **Low: a failed copy** showed a success-style toast. It now shows as an error.
+
+Also fixed: one flaky test (`Dialogs.spec.ts` waited a fixed number of ticks for a page that loads lazily; it failed about
+1 run in 6 on a busy machine). It now waits for the navigation; the assertion is unchanged.
+
+### Verification (review)
+
+- `npm run build`, `npm run type-check` and `npm run test` pass: **862 tests in 64 files** (Phase 3 ended at 817 in 62). The
+  whole suite was run twice in a row and the chat tests six more times after the flaky test was fixed.
+- Mutation checks: **28 fixes were undone on purpose, one at a time, and a test failed each time** (for example: requests sent
+  with another tab's sign-in, a 401 for another tab's token ending this one, tabs not listening to each other, a picture
+  staying broken after fresh links, an expired download followed in this tab, the bytes never released, links refreshed only
+  once, the box still editing a deleted message, the drawer surviving a sign-out, `ksw` dates in the browser's default, a late
+  event bringing a deleted message back, 51 people in one request, the sign-in page ignoring `redirect`).
+- Real Chromium against the running API, queue worker and Reverb: **22 new checks pass**, and the **174 checks** of Phases 2
+  and 3 still pass (36 + 44 + 64 + 30).
+  - Two tabs: signing out in one sends the other to the sign-in page with the message; signing in as Paw in one brings the
+    other back to the same chat as Paw; with the stored sign-in swapped under a tab (no event), what it sends still goes out as
+    the person it shows.
+  - Same browser, next person: the drawer is closed.
+  - A refused picture link: fresh links are fetched and the photo shows.
+  - Expired downloads (a text file, and a PNG sent as a file, which the server shows rather than downloads): fresh links are
+    fetched, the whole file is saved under its own name, no tab opens, the app stays on the chat.
+- Not verified here: Safari and Firefox (only Chromium was available), in particular cross-tab `storage` events and saving
+  from the page in Safari; a real 60-minute expiry (links were made to look expired by rewriting `expires` in the answer, and a
+  refused link was simulated with a 403).
+
+### Notes
+
+- The backend was not changed.
+- Saving a file from the page needs the API to let the site read the file route; `config/cors.php` allows `api/*`, which covers
+  it. If the files ever move outside `/api`, CORS must follow.
 
 ## Phase 4: Video
 

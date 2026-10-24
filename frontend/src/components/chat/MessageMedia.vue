@@ -1,20 +1,35 @@
 <script setup lang="ts">
 import { FileText, ImageOff } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useFreshLink } from '@/composables/useFreshLink'
 import type { Attachment, MessageType } from '@/types/chat'
 import { formatBytes } from '@/utils/files'
 
-defineProps<{ type: MessageType; attachment: Attachment; own?: boolean }>()
+const props = defineProps<{ type: MessageType; attachment: Attachment; own?: boolean }>()
 const emit = defineEmits<{ open: []; expired: [] }>()
 
 const { t } = useI18n()
 const broken = ref(false)
 
+// Fresh links arrived (after an expired one failed): draw the picture again with them.
+watch(
+  () => [props.attachment.url, props.attachment.thumbnail_url],
+  () => {
+    broken.value = false
+  },
+)
+
+const download = useFreshLink(
+  () => props.attachment.url,
+  () => props.attachment.original_name,
+  () => emit('expired'),
+)
+
 function onError(): void {
   broken.value = true
-  // The signed links last an hour: ask the server for fresh ones (the parent does it once per message).
+  // The signed links last an hour: ask the server for fresh ones (at most every few minutes per message).
   emit('expired')
 }
 </script>
@@ -62,10 +77,12 @@ function onError(): void {
     target="_blank"
     rel="noopener"
     :aria-label="t('message.download', { name: attachment.original_name })"
+    :aria-busy="download.waiting.value || undefined"
     :class="[
       'flex min-h-11 w-64 max-w-full items-center gap-3 rounded-lg px-3 py-2',
       own ? 'bg-primary-hover text-on-primary' : 'bg-bg text-text',
     ]"
+    @click="download.onClick"
   >
     <FileText class="size-6 shrink-0" aria-hidden="true" />
     <span class="min-w-0">

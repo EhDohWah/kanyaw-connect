@@ -10,6 +10,7 @@ import { mergeMessages, reconcileFirstPage, withoutMessage } from '@/utils/messa
 import { uuid } from '@/utils/uuid'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
+import { useDraftsStore } from '@/stores/drafts'
 
 export interface ChatTimeline {
   /** Oldest first: confirmed messages in order, then the ones still on their way. */
@@ -40,14 +41,20 @@ function toPublicUser(user: { id: string; name: string; avatar_url: string | nul
 const localPreviews = new Map<string, string>()
 /** Uploads that can be cancelled when the person discards a message. */
 const uploads = new Map<string, AbortController>()
-/** Messages whose attachment links were refreshed once already (a broken image is refetched once, not forever). */
-const refreshedAttachments = new Set<string>()
+/** When each message's attachment links were last refreshed: at most once every few minutes, so a file that is really
+ *  gone (every fresh link fails too) does not cause a stream of requests. */
+const refreshedAttachments = new Map<string, number>()
+export const LINK_REFRESH_GAP_MS = 5 * 60 * 1000
 
 export const useMessagesStore = defineStore('messages', () => {
   const timelines = reactive<Record<string, ChatTimeline>>({})
 
   const auth = useAuthStore()
   const chats = useChatsStore()
+  const drafts = useDraftsStore()
+  /** Messages known to be deleted. A late copy (an event that was on its way, a retry's answer) must not bring one back. */
+  const deletedIds = new Set<string>()
+  const notDeleted = (list: Message[]): Message[] => list.filter((message) => !deletedIds.has(message.id))
 
   function timeline(chatId: string): ChatTimeline | undefined {
     return timelines[chatId]
@@ -72,7 +79,7 @@ export const useMessagesStore = defineStore('messages', () => {
 
     try {
       const page = await messagesApi.listMessages(chatId)
-      entry.messages = mergeMessages(entry.messages, oldestFirst(page.data))
+      entry.messages = mergeMessages(entry.messages, notDeleted(oldestFirst(page.data)))
       entry.nextUrl = page.links.next
       entry.status = 'ready'
     } catch (problem) {
@@ -95,7 +102,7 @@ export const useMessagesStore = defineStore('messages', () => {
     entry.olderError = null
     try {
       const page = await messagesApi.listMessages(chatId, entry.nextUrl)
-      entry.messages = mergeMessages(entry.messages, oldestFirst(page.data))
+      entry.messages = mergeMessages(entry.messages, notDeleted(oldestFirst(page.data)))
       entry.nextUrl = page.links.next
     } catch (problem) {
       entry.olderError = toApiError(problem)
@@ -111,7 +118,7 @@ export const useMessagesStore = defineStore('messages', () => {
 
     try {
       const page = await messagesApi.listMessages(chatId)
-      const result = reconcileFirstPage(entry.messages, oldestFirst(page.data))
+      const result = reconcileFirstPage(entry.messages, notDeleted(oldestFirst(page.data)))
       entry.messages = result.messages
       if (result.replaced) entry.nextUrl = page.links.next
     } catch {
@@ -123,6 +130,7 @@ export const useMessagesStore = defineStore('messages', () => {
 
   /** A message arrived from the server (an event, or the answer to our own send). */
   function receive(message: Message): void {
+    if (deletedIds.has(message.id)) return
     // A chat nobody has opened has no timeline to keep: its history is fetched when it is opened. A timeline that is
     // still loading takes the message too; merging by id means the page that arrives later does not duplicate it.
     const entry = timelines[message.chat_id]
@@ -131,12 +139,24 @@ export const useMessagesStore = defineStore('messages', () => {
   }
 
   function receiveUpdate(message: Message): void {
+    if (deletedIds.has(message.id)) return
     const entry = timelines[message.chat_id]
     if (entry) entry.messages = mergeMessages(entry.messages, [message])
     if (chats.get(message.chat_id)?.latest_message?.id === message.id) chats.refreshPreview(message.chat_id)
   }
 
   function receiveDeleted(chatId: string, messageId: string): void {
+    deletedIds.add(messageId)
+
+    // The box must not keep editing or answering a message that is gone: an edit would go out as a new message, and a
+    // reply would quote nothing the person can see.
+    const draft = drafts.drafts[chatId]
+    if (draft?.editingId === messageId) {
+      draft.editingId = null
+      draft.text = ''
+    }
+    if (draft?.replyToId === messageId) draft.replyToId = null
+
     const entry = timelines[chatId]
     if (entry) {
       // Replies that quoted it now say the original is gone (the server does the same: `reply_to.is_deleted`).
@@ -149,10 +169,11 @@ export const useMessagesStore = defineStore('messages', () => {
     if (chats.get(chatId)?.latest_message?.id === messageId) chats.refreshPreview(chatId)
   }
 
-  /** An image or audio link stopped working (they last 60 minutes): ask for the message again, once. */
+  /** An attachment link stopped working (they last 60 minutes): ask for the message again, with fresh links. */
   async function refreshAttachment(message: Message): Promise<void> {
-    if (refreshedAttachments.has(message.id)) return
-    refreshedAttachments.add(message.id)
+    const last = refreshedAttachments.get(message.id)
+    if (last !== undefined && Date.now() - last < LINK_REFRESH_GAP_MS) return
+    refreshedAttachments.set(message.id, Date.now())
 
     try {
       receiveUpdate(await messagesApi.getMessage(message.id))
@@ -326,6 +347,7 @@ export const useMessagesStore = defineStore('messages', () => {
 
   function forget(chatId: string): void {
     delete timelines[chatId]
+    drafts.clear(chatId)
   }
 
   function reset(): void {
@@ -335,6 +357,7 @@ export const useMessagesStore = defineStore('messages', () => {
     uploads.forEach((controller) => controller.abort())
     uploads.clear()
     refreshedAttachments.clear()
+    deletedIds.clear()
   }
 
   return {

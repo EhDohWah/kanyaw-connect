@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, vi } from 'vitest'
 
-import { setSocketIdResolver, setUnauthorizedHandler } from '@/api/http'
+import { setSocketIdResolver, setTokenProvider, setUnauthorizedHandler } from '@/api/http'
 import { setLocale } from '@/i18n'
 import { createMockFeedService } from '@/mocks/feedService'
 import { setFeedService } from '@/services'
@@ -40,4 +40,6 @@ afterEach(() => {
   document.body.innerHTML = ''
   setUnauthorizedHandler(() => undefined)
   setSocketIdResolver(() => undefined)
+  // Each test's auth store registers its own; without one, requests read the stored token.
+  setTokenProvider(null)
 })

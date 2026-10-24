@@ -1,5 +1,5 @@
 import type { Pinia } from 'pinia'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMember, makeMessage, mountApp, page, person, restoreApi, settle, signedInStores, type Call } from '@/__tests__/helpers'
 import GroupInfoDialog from '@/components/chat/GroupInfoDialog.vue'
@@ -277,7 +277,8 @@ describe('new group', () => {
     expect([...body.member_ids].sort()).toEqual([HTOO, PAW].sort())
     expect(body.member_ids).not.toContain(ME)
     expect(useUiStore(pinia).newGroupOpen).toBe(false)
-    expect(router.currentRoute.value.fullPath).toBe(`/chats/${CHAT_ID}`)
+    // Opening it goes through the router, which loads the chat page first: give that time on a busy machine.
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(`/chats/${CHAT_ID}`))
   })
 
   it('shows the server’s complaint about the name under it', async () => {
@@ -324,7 +325,7 @@ describe('new chat', () => {
 
     expect(calls[0]).toMatchObject({ method: 'post', url: '/chats/direct', body: { user_id: PAW } })
     expect(useUiStore(pinia).newChatOpen).toBe(false)
-    expect(router.currentRoute.value.fullPath).toBe('/chats/d1')
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/chats/d1'))
   })
 
   it('says so when the chat could not be opened, and stays', async () => {

@@ -124,6 +124,13 @@ describe('LoginView', () => {
     expect(wrapper.get('[role=status]').text()).toBe('Your session has ended. Please sign in again.')
   })
 
+  it('says the person signed out in another tab when that is why they are here', async () => {
+    const { useAuthStore } = await import('@/stores/auth')
+    const mounted = await mountApp(LoginView, { route: '/login', prepare: (pinia) => (useAuthStore(pinia).endedReason = 'elsewhere') })
+
+    expect(mounted.wrapper.get('[role=status]').text()).toBe('You signed out in another tab or window.')
+  })
+
   it('uses the right autocomplete hints so password managers work, and links to registration', async () => {
     const { wrapper } = await open()
 

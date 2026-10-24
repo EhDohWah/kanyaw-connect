@@ -1,11 +1,16 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { FakeObserver, installFakeObserver } from '@/__tests__/fakeObserver'
 
 import { ME, makeChat, makeMessage, mountApp, restoreApi, settle, signedInStores } from '@/__tests__/helpers'
 import { ApiError } from '@/api/errors'
 import MessageList from '@/components/chat/MessageList.vue'
 import type { TimelineMessage } from '@/types/chat'
 
-afterEach(restoreApi)
+afterEach(() => {
+  restoreApi()
+  vi.unstubAllGlobals()
+})
 
 const today = () => new Date().toISOString()
 const fresh = (over = {}): TimelineMessage => makeMessage({ created_at: today(), ...over })
@@ -164,5 +169,60 @@ describe('scrolling', () => {
     await settle(3)
 
     expect(scroller.scrollTop).toBe(700)
+  })
+})
+
+describe('a message that lands before your own that is still sending', () => {
+  const pendingMine = (): TimelineMessage => ({
+    ...fresh({ id: 'pending:c1', sender_id: ME, content: 'on its way' }),
+    pending: { status: 'sending', clientId: 'c1', progress: null, error: null, draft: { type: 'text', content: 'on its way', replyToId: null, file: null, attachmentId: null } },
+  })
+
+  it('keeps the view at the end when the person was at the end', async () => {
+    const first = fresh({ content: 'first' })
+    const mine = pendingMine()
+    const { wrapper } = await mountList([first, mine])
+    const scroller = size(wrapper, { scrollHeight: 600, clientHeight: 500, scrollTop: 100 })
+    scroller.dispatchEvent(new Event('scroll'))
+    Object.defineProperty(scroller, 'scrollHeight', { value: 700, configurable: true })
+
+    // the confirmed message from someone else sorts before the pending one, so the last message does not change
+    await wrapper.setProps({ messages: [first, fresh({ content: 'from Paw' }), mine] })
+    await settle(3)
+
+    expect(scroller.scrollTop).toBe(700)
+  })
+
+  it('counts it as new when the person had scrolled up', async () => {
+    const first = fresh({ content: 'first' })
+    const mine = pendingMine()
+    const { wrapper } = await mountList([first, mine])
+    await settle(2) // the list starts at the end once; scroll up only after that
+    const scroller = size(wrapper, { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 })
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle(2)
+
+    await wrapper.setProps({ messages: [first, fresh({ content: 'from Paw' }), mine] })
+    await settle(3)
+
+    expect(wrapper.text()).toContain('1 new messages')
+    expect(scroller.scrollTop).toBe(0)
+  })
+})
+
+describe('the marker that loads older messages', () => {
+  it('looks again after a page arrived, so a tall screen keeps loading without the button', async () => {
+    installFakeObserver()
+    const { wrapper } = await mountList([fresh()], { hasOlder: true })
+    const observer = FakeObserver.latest()
+    expect(observer.observed).toHaveLength(1)
+    const marker = observer.observed[0]
+
+    await wrapper.setProps({ loadingOlder: true })
+    observer.observed = []
+    await wrapper.setProps({ loadingOlder: false })
+    await settle(1)
+
+    expect(observer.observed).toEqual([marker])
   })
 })

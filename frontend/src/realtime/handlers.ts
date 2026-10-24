@@ -14,12 +14,15 @@ function sharedHandlers(): Omit<UserChannelHandlers, never> {
   const chats = useChatsStore()
   const messages = useMessagesStore()
   const rooms = useRoomsStore()
+  const typing = useTypingStore()
 
   const me = (): string => auth.user?.id ?? ''
 
   return {
     messageSent: ({ message }) => {
       messages.receive(message)
+      // Their message is here: they have stopped typing, even if the "stopped" whisper was lost.
+      if (message.sender_id) typing.clear(message.chat_id, message.sender_id)
       // Someone started a meeting in one of your chats: it may now be in "Upcoming meetings".
       if (message.type === 'system' && message.metadata?.event === 'room_created') rooms.refreshIfLoaded()
     },

@@ -337,3 +337,58 @@ describe('knowing who is in a group', () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+describe('adding many people', () => {
+  it('adds them 50 at a time (the API’s limit per request), and shows the group as it ends up', async () => {
+    const ids = Array.from({ length: 120 }, (_unused, index) => `u${index}`)
+    const sizes: number[] = []
+    let call = 0
+    const { calls } = fakeApi((request) => {
+      sizes.push((request.body as { user_ids: string[] }).user_ids.length)
+      call += 1
+      return { data: { data: makeChat({ id: 'g1', type: 'group', name: `after ${call}`, other_user: undefined }) } }
+    })
+    const chats = useChatsStore()
+
+    const chat = await chats.addMembers('g1', ids)
+
+    expect(sizes).toEqual([50, 50, 20])
+    expect(calls.every((c) => c.url === '/chats/g1/members')).toBe(true)
+    expect(chat.name).toBe('after 3')
+  })
+
+  it('stops at the first refusal, keeping what was added before', async () => {
+    let call = 0
+    fakeApi(() => {
+      call += 1
+      return call === 2 ? { status: 422, data: { message: 'No' } } : { data: { data: makeChat({ id: 'g1', type: 'group', name: 'G', other_user: undefined, member_count: 52 }) } }
+    })
+    const chats = useChatsStore()
+
+    await expect(chats.addMembers('g1', Array.from({ length: 80 }, (_unused, index) => `u${index}`))).rejects.toMatchObject({ status: 422 })
+    expect(chats.get('g1')?.member_count).toBe(52)
+  })
+})
+
+describe('"Show more chats" failing', () => {
+  it('keeps the error for the button, apart from the list’s own error, and clears it on the next success', async () => {
+    let online = true
+    fakeApi((call) => {
+      if (call.uri.includes('cursor')) return online ? { data: page([chatAt('older', '2026-01-01T09:00:00Z')]) } : { network: true }
+      return { data: page([chatAt('new', '2026-03-14T09:00:00Z')], 'http://api.test/api/v1/chats?cursor=next') }
+    })
+    const chats = useChatsStore()
+    await chats.fetchChats()
+
+    online = false
+    await chats.loadMore()
+    expect(chats.loadMoreError?.isNetwork).toBe(true)
+    expect(chats.error).toBeNull()
+    expect(chats.status).toBe('ready')
+
+    online = true
+    await chats.loadMore()
+    expect(chats.loadMoreError).toBeNull()
+    expect(chats.chats.map((c) => c.id)).toEqual(['new', 'older'])
+  })
+})

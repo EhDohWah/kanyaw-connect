@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dayKey, formatClock, formatDayLabel, formatFullTime, formatListTime, formatMeetingTime, formatRelativeTime, safeTimeZone } from '@/utils/dates'
+import { dateLocale, dayKey, formatClock, formatDayLabel, formatFullTime, formatListTime, formatMeetingTime, formatRelativeTime, safeTimeZone } from '@/utils/dates'
 
 const labels = { today: 'Today', yesterday: 'Yesterday' }
 const now = Date.parse('2026-03-14T12:00:00Z') // a Saturday
@@ -110,5 +110,16 @@ describe('formatMeetingTime', () => {
 
   it('adds the year for another year', () => {
     expect(formatMeetingTime('2027-01-05T09:00:00Z', now, 'UTC', 'en-US')).toMatch(/2027/)
+  })
+})
+
+describe('dateLocale', () => {
+  it('keeps a language the browser has dates for', () => {
+    expect(dateLocale('my')).toBe('my')
+    expect(dateLocale('en')).toBe('en')
+  })
+
+  it('uses English for one it does not know (S’gaw Karen), like the rest of the app, not the browser’s own language', () => {
+    expect(dateLocale('ksw')).toBe('en')
   })
 })

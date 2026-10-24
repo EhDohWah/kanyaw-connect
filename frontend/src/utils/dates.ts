@@ -20,12 +20,24 @@ export function safeTimeZone(timeZone: string): string {
 // Making a formatter is slow and a conversation asks for thousands of them, so each kind is made once.
 const formatters = new Map<string, Intl.DateTimeFormat>()
 
+/**
+ * A language the browser has no dates for (S'gaw Karen, for one) would quietly get the browser's own language, which
+ * may be Thai or anything else. The app's texts fall back to English, so its dates do too.
+ */
+export function dateLocale(locale: string): string {
+  try {
+    return Intl.DateTimeFormat.supportedLocalesOf([locale]).length > 0 ? locale : 'en'
+  } catch {
+    return 'en'
+  }
+}
+
 function formatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   const key = `${locale}|${JSON.stringify(options)}`
   let found = formatters.get(key)
   if (!found) {
     try {
-      found = new Intl.DateTimeFormat(locale, options)
+      found = new Intl.DateTimeFormat(dateLocale(locale), options)
     } catch {
       found = new Intl.DateTimeFormat('en', options)
     }

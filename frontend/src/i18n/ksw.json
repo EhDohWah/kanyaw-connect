@@ -76,7 +76,8 @@
     "passwordRequired": "Enter your password.",
     "passwordTooShort": "Use at least 8 characters.",
     "passwordMismatch": "The passwords do not match.",
-    "accountCreatedSignIn": "Your account was created. Please sign in."
+    "accountCreatedSignIn": "Your account was created. Please sign in.",
+    "signedOutElsewhere": "You signed out in another tab or window."
   },
   "shell": {
     "sidebarTitle": "People & activity",

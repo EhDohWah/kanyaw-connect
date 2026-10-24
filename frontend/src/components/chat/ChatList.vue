@@ -61,7 +61,8 @@ const ui = useUiStore()
         @select="$emit('select', $event)"
       />
     </ul>
-    <div v-if="chats.hasMore" class="p-4 text-center">
+    <div v-if="chats.hasMore" class="flex flex-col items-center gap-2 p-4 text-center">
+      <p v-if="chats.loadMoreError" class="text-sm text-danger" role="alert">{{ errorMessage(chats.loadMoreError, t) }}</p>
       <BaseButton variant="secondary" :loading="chats.loadingMore" @click="chats.loadMore()">
         {{ chats.loadingMore ? t('chat.list.loadingMore') : t('chat.list.showMore') }}
       </BaseButton>

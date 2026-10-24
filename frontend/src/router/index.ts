@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type Router, type RouterHistory } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
+import { safeRedirect } from '@/utils/safeRedirect'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -69,7 +70,8 @@ export function createAppRouter(history: RouterHistory = createWebHistory(import
     const auth = useAuthStore()
 
     if (to.meta.guestOnly) {
-      return auth.isAuthenticated ? { name: 'home' } : true
+      // Signed in already (in another tab, say): go where the sign-in page would have gone afterwards.
+      return auth.isAuthenticated ? safeRedirect(to.query.redirect) : true
     }
 
     if (to.meta.requiresAuth) {

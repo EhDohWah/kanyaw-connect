@@ -26,7 +26,13 @@ const passwordError = ref('')
 // Why the person is looking at this screen when they did not ask to sign out. Kept as a key so a language
 // change translates it; the reason is shown once, so it is cleared from the store after this screen opens.
 const noticeKey =
-  route.query.created === '1' ? 'auth.createdButSignInFailed' : auth.endedReason === 'expired' ? 'auth.sessionEnded' : ''
+  route.query.created === '1'
+    ? 'auth.createdButSignInFailed'
+    : auth.endedReason === 'expired'
+      ? 'auth.sessionEnded'
+      : auth.endedReason === 'elsewhere'
+        ? 'auth.signedOutElsewhere'
+        : ''
 onMounted(() => {
   auth.endedReason = null
 })

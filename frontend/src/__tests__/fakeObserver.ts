@@ -17,6 +17,10 @@ export class FakeObserver {
     this.observed.push(element)
   }
 
+  unobserve(element: Element): void {
+    this.observed = this.observed.filter((candidate) => candidate !== element)
+  }
+
   disconnect(): void {
     this.disconnected += 1
     this.observed = []

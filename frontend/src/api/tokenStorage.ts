@@ -4,7 +4,8 @@ import { readStorage, removeStorage, writeStorage } from '@/utils/storage'
  * The API uses bearer tokens, not cookies, so the token lives in localStorage. It is only ever read here
  * and sent in the Authorization header: never logged, never put in a URL.
  */
-const TOKEN_KEY = 'kc.token'
+/** The key other tabs watch (`storage` events) to notice a sign-in or sign-out somewhere else. */
+export const TOKEN_KEY = 'kc.token'
 const EXPIRES_KEY = 'kc.tokenExpiresAt'
 
 export function getToken(): string | null {

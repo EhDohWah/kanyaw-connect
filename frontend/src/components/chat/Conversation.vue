@@ -40,7 +40,9 @@ const { chat, state, timeline, atBottom, reload } = useConversation(toRef(props,
 
 const list = ref<InstanceType<typeof MessageList> | null>(null)
 const infoOpen = ref(false)
-const viewerMessage = ref<TimelineMessage | null>(null)
+/** The message whose picture is open full size. Looked up by id, so fresh links that arrive meanwhile are used. */
+const viewerId = ref<string | null>(null)
+const viewerMessage = computed(() => (viewerId.value ? (find(viewerId.value) ?? null) : null))
 const toDelete = ref<TimelineMessage | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
@@ -70,7 +72,8 @@ async function runAction(key: MessageActionKey, messageId: string): Promise<void
     draft.replyToId = null
     draft.editingId = message.id
   } else if (key === 'copy') {
-    ui.toast((await copyText(message.content ?? '')) ? t('message.copied') : t('message.copyFailed'), 'success')
+    const copied = await copyText(message.content ?? '')
+    ui.toast(copied ? t('message.copied') : t('message.copyFailed'), copied ? 'success' : 'error')
   } else {
     deleteError.value = ''
     toDelete.value = message
@@ -95,6 +98,12 @@ async function confirmDelete(): Promise<void> {
 }
 
 const viewerAttachment = computed(() => viewerMessage.value?.attachment ?? null)
+
+/** An attachment link stopped working (they last an hour): ask the server for fresh ones. */
+function refreshLinks(messageId: string): void {
+  const message = find(messageId)
+  if (message) void messages.refreshAttachment(message)
+}
 </script>
 
 <template>
@@ -157,8 +166,8 @@ const viewerAttachment = computed(() => viewerMessage.value?.attachment ?? null)
           @action="runAction"
           @retry="messages.retry(chatId, $event)"
           @discard="messages.discard(chatId, $event)"
-          @open-image="viewerMessage = find($event) ?? null"
-          @expired="(id) => { const message = find(id); if (message) void messages.refreshAttachment(message) }"
+          @open-image="viewerId = $event"
+          @expired="refreshLinks"
         />
 
         <TypingIndicator :names="typingNames" />
@@ -166,7 +175,13 @@ const viewerAttachment = computed(() => viewerMessage.value?.attachment ?? null)
       </template>
     </template>
 
-    <ImageViewer :open="viewerMessage !== null" :attachment="viewerAttachment" :caption="viewerMessage?.content" @close="viewerMessage = null" />
+    <ImageViewer
+      :open="viewerMessage !== null"
+      :attachment="viewerAttachment"
+      :caption="viewerMessage?.content"
+      @close="viewerId = null"
+      @expired="viewerId && refreshLinks(viewerId)"
+    />
     <ConfirmDialog
       :open="toDelete !== null"
       :title="t('chat.delete.title')"

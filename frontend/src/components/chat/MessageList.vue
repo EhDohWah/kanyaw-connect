@@ -104,11 +104,24 @@ watch(
       return
     }
 
-    if (lastId !== prevLast && length > prevLength) {
+    // Something new: usually at the end, but someone else's message lands before your own that is still sending.
+    if (length > prevLength) {
       const newest = props.messages[props.messages.length - 1]
-      if (wasAtBottom || newest?.sender_id === auth.user?.id) scrollToBottom()
+      const wroteItYourself = lastId !== prevLast && newest?.sender_id === auth.user?.id
+      if (wasAtBottom || wroteItYourself) scrollToBottom()
       else unseen.value += length - prevLength
     }
+  },
+)
+
+// The marker at the top only announces itself when it comes into view. If it is still in view after a page of older
+// messages arrived (a tall screen, a short page), look again, so the next page comes without pressing the button.
+watch(
+  () => props.loadingOlder,
+  (loading, wasLoading) => {
+    if (loading || !wasLoading || !observer || !topSentinel.value) return
+    observer.unobserve(topSentinel.value)
+    observer.observe(topSentinel.value)
   },
 )
 

@@ -23,12 +23,17 @@ function compareChats(a: Chat, b: Chat): number {
   return timeA === timeB ? (a.id < b.id ? 1 : -1) : timeA < timeB ? 1 : -1
 }
 
+/** `POST /chats/{chat}/members` takes at most this many people at once (docs/API.md). */
+export const MAX_ADD_PER_REQUEST = 50
+
 export const useChatsStore = defineStore('chats', () => {
   const byId = ref<Record<string, Chat>>({})
   const status = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const error = ref<ApiError | null>(null)
   const nextUrl = ref<string | null>(null)
   const loadingMore = ref(false)
+  /** "Show more chats" failed: shown under the button, without hiding the chats already listed. */
+  const loadMoreError = ref<ApiError | null>(null)
   /** The chat that is open on screen right now (and the page is visible): its new messages are not "unread". */
   const viewingId = ref<string | null>(null)
   /** The chat the person themselves just left: the screen showing it goes back to the list without a "removed" message. */
@@ -102,12 +107,13 @@ export const useChatsStore = defineStore('chats', () => {
     if (!nextUrl.value || loadingMore.value) return
 
     loadingMore.value = true
+    loadMoreError.value = null
     try {
       const page = await chatsApi.listChats(nextUrl.value)
       for (const chat of page.data) put(chat)
       nextUrl.value = page.links.next
     } catch (problem) {
-      error.value = toApiError(problem)
+      loadMoreError.value = toApiError(problem)
     } finally {
       loadingMore.value = false
     }
@@ -225,8 +231,13 @@ export const useChatsStore = defineStore('chats', () => {
     return put(await chatsApi.updateChat(chatId, patch))
   }
 
+  /** Adds people, 50 per request (the API's limit), so a long selection does not fail as a whole. */
   async function addMembers(chatId: string, userIds: string[]): Promise<Chat> {
-    return put(await chatsApi.addMembers(chatId, userIds))
+    let chat: Chat | undefined
+    for (let start = 0; start < userIds.length; start += MAX_ADD_PER_REQUEST) {
+      chat = put(await chatsApi.addMembers(chatId, userIds.slice(start, start + MAX_ADD_PER_REQUEST)))
+    }
+    return chat ?? (await loadDetails(chatId))
   }
 
   async function setRole(chatId: string, userId: string, role: Exclude<MemberRole, 'owner'>): Promise<Chat> {
@@ -261,6 +272,7 @@ export const useChatsStore = defineStore('chats', () => {
     error.value = null
     nextUrl.value = null
     loadingMore.value = false
+    loadMoreError.value = null
     viewingId.value = null
     lastLeftId.value = null
     memberRequests.clear()
@@ -272,6 +284,7 @@ export const useChatsStore = defineStore('chats', () => {
     error,
     hasMore,
     loadingMore,
+    loadMoreError,
     viewingId,
     lastLeftId,
     chats,

@@ -119,6 +119,28 @@ describe('ChatList', () => {
     expect(useChatsStore(pinia).status).toBe('ready')
   })
 
+  it('says so under the button when more chats could not be loaded, and the button tries again', async () => {
+    let online = false
+    fakeApi((call) => {
+      if (call.uri.includes('cursor')) return online ? { data: page([makeChat({ id: 'older', last_message_at: '2026-01-01T09:00:00Z' })]) } : { network: true }
+      return { data: page([makeChat()], 'http://api.test/api/v1/chats?cursor=next') }
+    })
+    const { wrapper, pinia } = await open()
+    await useChatsStore(pinia).fetchChats()
+    await settle()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Show more chats')!.trigger('click')
+    await settle()
+    expect(wrapper.get('[role=alert]').text()).toContain("Can't reach the server")
+    expect(wrapper.findAll('li').length).toBe(1)
+
+    online = true
+    await wrapper.findAll('button').find((b) => b.text() === 'Show more chats')!.trigger('click')
+    await settle()
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(wrapper.findAll('li').length).toBe(2)
+  })
+
   it('suggests a first step when there are no chats, and the buttons open the dialogs', async () => {
     const { wrapper, pinia } = await open((p) => {
       useChatsStore(p).status = 'ready'

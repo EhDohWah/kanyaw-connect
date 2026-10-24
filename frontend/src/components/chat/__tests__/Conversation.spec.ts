@@ -316,6 +316,40 @@ describe('message actions', () => {
     expect(useUiStore(pinia).toasts.map((t) => t.message)).toContain('Copied')
   })
 
+  it('says so, as an error, when the text could not be copied', async () => {
+    const target = theirs('Copy me')
+    const chat = makeChat()
+    serve({ chat, messages: [target] })
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => Promise.reject(new Error('denied')) }, configurable: true })
+    document.execCommand = vi.fn(() => false)
+    const { wrapper, pinia } = await open({ chat, messages: [target] })
+
+    await toolbarButton(wrapper, 'Copy me', 'Copy')?.trigger('click')
+    await settle(2)
+
+    const toast = useUiStore(pinia).toasts.at(-1)
+    expect(toast?.kind).toBe('error')
+    expect(toast?.message).not.toBe('Copied')
+  })
+
+  it('leaves edit mode, with an empty box, when the message being edited is deleted elsewhere', async () => {
+    const own = mine('Typo here')
+    const chat = makeChat()
+    serve({ chat, messages: [own] })
+    const { wrapper, pinia } = await open({ chat, messages: [own] })
+    await toolbarButton(wrapper, 'Typo here', 'Edit')?.trigger('click')
+    await settle(2)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Typo here')
+
+    // deleted on the person's phone, or by a group admin: what the `message.deleted` event does
+    useMessagesStore(pinia).receiveDeleted(CHAT_ID, own.id)
+    await settle(2)
+
+    expect(useDraftsStore(pinia).get(CHAT_ID).editingId).toBeNull()
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.text()).not.toContain('Editing')
+  })
+
   it('Delete asks first, says it cannot be undone, and deletes only after "Delete"', async () => {
     const own = mine('Delete me')
     const chat = makeChat()
@@ -358,5 +392,31 @@ describe('message actions', () => {
     const { wrapper } = await open({ chat, messages: [target] })
 
     expect(toolbarButton(wrapper, 'Not allowed here', 'Delete')?.exists()).toBe(true)
+  })
+})
+
+describe('the full-size picture', () => {
+  const photo = (signature: string) =>
+    makeMessage({
+      id: 'photo-1',
+      type: 'image',
+      content: null,
+      attachment: { id: 'a1', original_name: 'p.png', mime_type: 'image/png', size: 10, url: `https://x/file?sig=${signature}`, thumbnail_url: `https://x/thumb?sig=${signature}`, created_at: 'x' },
+    })
+
+  it('asks for fresh links when its link has run out, and shows the picture with them', async () => {
+    const chat = makeChat()
+    const { calls } = serve({ chat, messages: [photo('old')], extra: (call) => (call.url === '/messages/photo-1' ? { data: { data: photo('new') } } : undefined) })
+    const { wrapper } = await open({ chat, messages: [photo('old')] })
+    await wrapper.get('button[aria-label="Open photo"]').trigger('click')
+    await settle(2)
+    const big = () => document.body.querySelector<HTMLImageElement>('[role=dialog] img')
+    expect(big()?.getAttribute('src')).toBe('https://x/file?sig=old')
+
+    big()?.dispatchEvent(new Event('error'))
+    await settle(4)
+
+    expect(calls.filter((c) => c.url === '/messages/photo-1')).toHaveLength(1)
+    expect(big()?.getAttribute('src')).toBe('https://x/file?sig=new')
   })
 })

@@ -108,4 +108,26 @@ describe('login and register', () => {
 
     expect(r.currentRoute.value.name).toBe('home')
   })
+
+  it('send a signed-in user on to the page the sign-in screen was keeping (signed in again in another tab)', async () => {
+    signIn()
+    fakeApi(() => ({ data: { data: makeUser() } }))
+    const r = router()
+
+    await r.push('/login?redirect=/chats/c1')
+
+    expect(r.currentRoute.value.fullPath).toBe('/chats/c1')
+  })
+
+  it('never follow a redirect off the site, or back to a sign-in screen', async () => {
+    signIn()
+    fakeApi(() => ({ data: { data: makeUser() } }))
+    const r = router()
+
+    await r.push('/login?redirect=//evil.example')
+    expect(r.currentRoute.value.name).toBe('home')
+
+    await r.push('/register?redirect=/login')
+    expect(r.currentRoute.value.name).toBe('home')
+  })
 })

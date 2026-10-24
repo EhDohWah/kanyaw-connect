@@ -11,6 +11,7 @@ import { usePresenceStore } from '@/stores/presence'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
+import { useUiStore } from '@/stores/ui'
 
 /** How often "who is online" is asked again while the page is visible (a heartbeat lasts 90 seconds on the server). */
 export const PRESENCE_REFRESH_MS = 60_000
@@ -32,6 +33,7 @@ export function useMessagingSession(): void {
   const drafts = useDraftsStore()
   const feed = useFeedStore()
   const rooms = useRoomsStore()
+  const ui = useUiStore()
 
   let startedFor: string | null = null
   let presenceTimer: ReturnType<typeof setInterval> | undefined
@@ -81,6 +83,7 @@ export function useMessagingSession(): void {
     feed.reset()
     rooms.reset()
     status.reset()
+    ui.resetForSignOut()
   }
 
   const onOnline = (): void => {

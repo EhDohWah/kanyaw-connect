@@ -50,6 +50,14 @@ export const useUiStore = defineStore('ui', () => {
     setDrawer({ ...drawer.value, open: false })
   }
 
+  /** Signing out: the next person on this browser does not open the previous person's chat or dialogs. */
+  function resetForSignOut(): void {
+    setDrawer({ open: false, chatId: null })
+    createMenuOpen.value = false
+    newChatOpen.value = false
+    newGroupOpen.value = false
+  }
+
   function dismissToast(id: number): void {
     toasts.value = toasts.value.filter((toast) => toast.id !== id)
   }
@@ -69,6 +77,7 @@ export const useUiStore = defineStore('ui', () => {
     drawer,
     openDrawer,
     collapseDrawer,
+    resetForSignOut,
     toast,
     dismissToast,
   }

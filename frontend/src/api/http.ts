@@ -35,6 +35,17 @@ export function setSocketIdResolver(resolver: () => string | undefined): void {
   socketIdResolver = resolver
 }
 
+let tokenProvider: () => string | null = getToken
+
+/**
+ * Where the bearer token comes from: the session this tab holds (the auth store registers it). Not straight from
+ * `localStorage`, which every tab shares: another tab signing in as someone else must not make this tab's screens send
+ * requests as that person. Until a store registers (and in tests) it falls back to what is stored.
+ */
+export function setTokenProvider(provider: (() => string | null) | null): void {
+  tokenProvider = provider ?? getToken
+}
+
 let unauthorizedHandler: () => void = () => undefined
 
 /**
@@ -54,7 +65,7 @@ function sentToken(config: InternalAxiosRequestConfig | undefined): string | nul
 
 http.interceptors.request.use((config) => {
   if (!config.skipAuth) {
-    const token = getToken()
+    const token = tokenProvider()
     if (token) config.headers.set('Authorization', `Bearer ${token}`)
   }
 
@@ -94,7 +105,7 @@ http.interceptors.response.use(
       // Only react when the token that was refused is still the one we hold: a late 401 for an old token must
       // not sign out a session that has been renewed since.
       const refused = sentToken(config)
-      if (refused !== null && refused === getToken()) unauthorizedHandler()
+      if (refused !== null && refused === tokenProvider()) unauthorizedHandler()
     }
 
     throw toApiError(error)
