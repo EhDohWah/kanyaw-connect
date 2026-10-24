@@ -709,8 +709,18 @@ with a meeting).
 - Real Chromium against the running API, queue worker, Reverb and LiveKit, with a local stand-in for the browser's push
   service (headless Chromium cannot reach Google's): **40 push and Settings checks pass (twice)**. The server's real
   notification was decrypted with the browser's keys and handed to the real service worker; the tap was simulated.
-- The accessibility and error-state sweep (83 checks) and the earlier phases' browser suites are being run again on the
-  final code; the results follow in the next commit.
+- The accessibility and error-state sweep: **83 checks pass** (twice in full): axe on 12 pages at 390, 820 and 1280 px and
+  on the sign-in pages, 7 dialogs, keyboard only, reduced motion, 320 px reflow, the page language, every list failing
+  and recovering with "Try again", and a page whose code cannot be downloaded (loaded afresh once; the second failure is
+  said, not looped). One run stopped once in its first step ("the page reloaded while being measured") and did not happen
+  again in the next two full runs or with every page load logged; not explained.
+- The earlier phases' browser suites all pass again on the final code, each on a freshly seeded database: 36 + 44 + 64 +
+  30 (Phases 2 and 3), 22 (review), 42 + 27 (Phase 4). The review suite first failed to sign in: the server allows 5
+  sign-ins a minute per person and the count survives a reseed, so suites run back to back ran into it; with a minute
+  between suites it passes.
+- Not verified here: Safari and Firefox, real phones (including adding the app to an iPhone's Home Screen and getting a
+  notification there), a real push service (Google's, Mozilla's or Apple's: the local stand-in received exactly what the
+  server sends them), and a real tap on a notification (the tap was a simulated event in the service worker).
 
 ### Real problems found while building this phase (all fixed, with a test)
 
