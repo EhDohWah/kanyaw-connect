@@ -10,11 +10,13 @@ export function readStorage(key: string): string | null {
   }
 }
 
-export function writeStorage(key: string, value: string): void {
+/** Returns whether the browser kept it (it may be full or switched off); callers that can live without may ignore that. */
+export function writeStorage(key: string, value: string): boolean {
   try {
     window.localStorage.setItem(key, value)
+    return true
   } catch {
-    // not available: nothing to do
+    return false
   }
 }
 

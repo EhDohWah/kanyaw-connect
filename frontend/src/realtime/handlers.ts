@@ -2,6 +2,7 @@ import type { ChatChannelHandlers, UserChannelHandlers } from '@/realtime/manage
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
 import { useMessagesStore } from '@/stores/messages'
+import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
 
 /**
@@ -12,11 +13,16 @@ function sharedHandlers(): Omit<UserChannelHandlers, never> {
   const auth = useAuthStore()
   const chats = useChatsStore()
   const messages = useMessagesStore()
+  const rooms = useRoomsStore()
 
   const me = (): string => auth.user?.id ?? ''
 
   return {
-    messageSent: ({ message }) => messages.receive(message),
+    messageSent: ({ message }) => {
+      messages.receive(message)
+      // Someone started a meeting in one of your chats: it may now be in "Upcoming meetings".
+      if (message.type === 'system' && message.metadata?.event === 'room_created') rooms.refreshIfLoaded()
+    },
 
     // Your other devices read a chat: clear its badge here too. Other people's reading is not shown (yet).
     messageRead: (event) => {

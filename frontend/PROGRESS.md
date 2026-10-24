@@ -8,7 +8,7 @@ item they belong to.
 |---|---|
 | 1. Foundation | Done, approved |
 | 2. Messaging | Done, waiting for review |
-| 3. Feed and sidebar | Not started |
+| 3. Feed and sidebar | Done, waiting for review |
 | 4. Video | Not started |
 | 5. Push and polish | Not started |
 
@@ -265,7 +265,143 @@ item they belong to.
 
 ## Phase 3: Feed and sidebar
 
-Not started.
+- [x] **Feed service behind an interface** (`src/services/`), mock implementation in `src/mocks/`, chosen by `VITE_FEED_SOURCE`
+  (`mock` now, `api` later). Calls answer after 150–400 ms; likes, comments and new posts are kept in `localStorage`;
+  Karen author names, everyday community captions, images from `picsum.photos/seed/…`.
+  - Components and the store only know `FeedService` (`listPosts`, `createPost`, `likePost`, `unlikePost`, `listComments`,
+    `addComment`, `postLink`). The shapes (`src/types/feed.ts`) follow the real API's conventions: cursor pages, ISO times,
+    `PublicUser` for people, `ApiError` for failures (a missing post is a `404`, a bad caption a `422` with the field named).
+  - `VITE_FEED_SOURCE=api` is a stub that answers "the backend has no feed endpoints yet" (`501`). It does **not** quietly show
+    sample posts, so nobody mistakes demo content for a working server. When the endpoints exist, `src/services/apiFeedService.ts`
+    is the only file to write.
+  - 30 sample posts (a market day, a school plant sale, a garden, notices, a boat race…), some with comments, by Saw Htoo,
+    Naw Paw, Saw Kler and Naw Mu. Dated relative to "now", so the feed always looks recent; comments are never from the future.
+  - What is kept in the browser: your posts, your comments and your likes (per person, so two people sharing a browser do not
+    share likes) under one key (`kc.mock.feed`, versioned). Anything that is not what we wrote is ignored, not trusted.
+  - A picture chosen for a post is shrunk to a 900 px JPEG and kept as a `data:` address (the browser's storage is small,
+    about 5 MB for everything). If it is full, the oldest pictures go first, then the oldest posts; the newest stays.
+- [x] **Post cards**: author avatar and name, relative time ("5 min. ago", full date on hover), image in a fixed square box with
+  lazy loading, caption (links work, markup never does; long captions are cut with "more").
+  - The first two posts' pictures load at once, the rest when they come near the screen. A picture that fails to load leaves a
+    calm "Picture not available" in the same box.
+  - Relative time uses the browser's own `Intl.RelativeTimeFormat` (English for a language it does not know, such as S'gaw Karen).
+- [x] **Like**: toggles with one small scale animation (not shown for an unlike, and practically instant with "reduce motion"),
+  count kept in step (and put back if the request fails).
+  - Optimistic: the heart changes at once. Quick repeated taps are sent one after the other in order, the screen takes the
+    server's numbers when the last answer is in (so it never flickers through the in-between answers), and if the server
+    refuses it goes back to what the server last confirmed, with one toast for the whole run of taps.
+  - The heart is filled in the brand blue (`danger` is for errors only).
+- [x] **Comments drawer**: bottom sheet on phones, side drawer from 768 px (the shared `Modal`, now with `placement="side"`);
+  comments (oldest first, "Show more comments") and an input; focus trap, Escape, focus returns to the button that opened it.
+  - The comment box is pinned under the list. On a screen with a mouse it has the cursor at once; on a phone it does not
+    (that would open the on-screen keyboard before anyone chose to type). Enter sends with a mouse and never while an input
+    method is composing a word; on touch Enter is a new line and the button sends. A refused comment keeps its words.
+- [x] **Share**: Web Share API where available, otherwise copies a link and shows a toast.
+  - Closing the share sheet is not an error. If the share sheet refuses for another reason the link is copied instead; if
+    copying fails too, a toast says so. The link is `/?post=<id>`: it opens the feed (there is no page for one post yet).
+- [x] **Infinite scroll** with a skeleton while loading; empty and error states with "Try again".
+  - The next page is fetched when the end of the list is within 600 px of the screen. A failed page shows "More posts could not
+    be loaded." at the end (the posts stay) with "Try again". At the end: "You have seen all the posts." A browser without
+    `IntersectionObserver` gets a "Show more posts" button instead.
+- [x] **Preview note** at the top of the feed ("Preview — sample posts. Posting is not live yet."), dismissable.
+  - *Decision:* the note comes back at the next visit (it is not remembered), since its job is to stop sample posts from being
+    taken for real ones.
+- [x] **Create modal: Post**: caption, drag-and-drop zone that also opens the file picker (`accept="image/*"`, so phones offer
+  the camera), preview, images up to 10 MB, new post at the top of the feed through the mock service.
+  - A file that is not a picture, or is over 10 MB (10 MB exactly is accepted), is refused with a message before anything else
+    happens. A picture the browser cannot draw is taken away again with a message. A file dropped a little beside the zone no
+    longer makes the browser leave the page. The words and the picture are kept when posting fails.
+  - After posting: the dialog closes, a toast says it is on the feed, and a person who was on another page is taken to the feed.
+  - The preview is capped at 256 px (the same square the feed shows) so the Post button stays in view on a laptop.
+- [x] **Create modal: Start a meeting**: `POST /rooms` (instant room), then `/rooms/:id`.
+  - *Decision:* it starts at once, named "{your name}'s meeting" (the API requires a `name` and the prompt does not ask for a
+    field). Naming, passwords, a waiting room and a chat link come with the "New meeting" form in Phase 4.
+  - **`/rooms/:id` is still a placeholder until Phase 4**, so the room exists on the server but nobody can join it yet. The server
+    ends rooms that nobody joins after a while (`rooms:end-stale`).
+  - A failure stays in the dialog, in words ("Can't reach the server…", the server's own reason for a `422`), and can be retried.
+- [x] **Right sidebar, Online now**: people from your chats whose presence is `online` (`GET /users/presence`); a click opens
+  or creates the direct chat (`POST /chats/direct`).
+  - "People from your chats" means the other person of each direct chat and the members of groups the app has opened (the five
+    the sidebar opens, and any opened for the new-chat picker). The lookup runs when the chat list arrives, when new people
+    become known (grouped into one request) and every 60 seconds while the page is visible.
+  - Shows eight with "Show more"; a count; loading, "Nobody is online right now", "We could not check who is online" with
+    "Try again"; people already shown are kept when a later lookup fails.
+- [x] **Right sidebar, Upcoming meetings**: `GET /rooms?filter=upcoming`, each with a Join button.
+  - Name, start time in the person's own zone, host ("You are the host"), "In progress" for one already started. Join is a link to
+    `/rooms/:id` (a placeholder until Phase 4).
+  - Kept fresh: asked when first shown, every 5 minutes while the page is visible, when the person comes back after a minute or
+    more, and **at once when a meeting is announced in one of your chats** (the `room_created` system message). Checked live
+    with two people: a meeting Paw scheduled for the group appeared in Eh Doh's sidebar with no reload.
+- [x] **Right sidebar, People from your groups**: members of up to 5 of your group chats (`GET /chats/{id}`) with whom you have
+  no direct chat yet, cached for the session, each with a "Message" button.
+  - The five are the most recently active groups. Members are asked for once (the chat store keeps them for the session) and
+    only once when several screens ask at the same time. Messaging someone takes them off the list (there is a chat now).
+- [x] **States and accessibility**: skeleton, empty and error state for every list; touch targets, labels, focus, contrast.
+  - Every list has a loading state (announced to screen readers), an empty state that says what to do, and an error state with
+    "Try again". An axe scan found no violations on Home with the sidebar, the comments drawer and sheet, both steps of the Create
+    dialog, the activity sheet and Home on a phone. Buttons and links on the feed and in the sheets are at least 44 × 44 px.
+  - *Addition:* below 1024 px, where there is no right column, Home has a **"People & activity"** button that opens the same three
+    parts in a sheet. Without it, "Join" and "Message" would have no way in on a phone. The right column is not made at all
+    below 1024 px, so a phone does not fetch meetings or group members it never shows (checked: no `/rooms` request until the
+    sheet is opened).
+- [x] **Tests**. See "Verification" below.
+- [x] **Verification** in a real browser against the running backend (two people), with an axe scan. See below.
+
+### Verification (Phase 3)
+
+- `npm run build`, `npm run type-check` and `npm run test` pass: **817 tests in 62 files** (Phase 2 ended at 531 in 41). The suite
+  was run three times in a row to look for flaky tests. The backend was not touched in this phase.
+- New tests cover the feed service (paging by cursor with a post added meanwhile, per-person likes, persistence, damaged
+  storage, a full browser store), the feed store (optimistic likes, ordering of quick taps, rollback, paging, comment threads),
+  the rooms and presence stores, the sidebar parts, the Create flow, the comments drawer (including Burmese/Karen keyboard
+  behaviour and phone behaviour), the drop zone, the infinite scroll with a fake observer, and the shared `Modal` options.
+  Tests run the real API client, router and stores with only the network (and the sample feed's pause) replaced.
+- Mutation checks: 29 behaviours were broken on purpose, one at a time, and a test failed each time (for example: a refused like
+  not put back, quick taps sent in parallel, the next page repeating posts, a second like counting twice, likes shared between
+  people, a 10 MB picture refused, a file dropped beside the zone leaving the page, Enter sending while a word is composed,
+  people you already chat with offered again, all groups opened instead of five, the sidebar made on narrow screens). Two broke
+  nothing at first: one test could not tell grouped from separate presence lookups (now it can), and one list of "look again"
+  triggers in the feed turned out to be redundant (removed).
+- Real Chromium, two signed-in people against the running API, queue worker and Reverb: **94 checks pass** (64 on desktop, 30
+  on a phone and a tablet), and the 80 checks of Phase 2 still pass.
+  - Desktop: the feed (6 posts, square boxes, eager and lazy pictures), likes (at once, after the delay, after a reload, with the
+    keyboard), the comments drawer (side drawer, cursor in the box, Enter sends, Escape closes and returns focus, survives a reload),
+    share (clipboard fallback and a share sheet), scrolling to the end (30 posts, each once, a skeleton shown), Create (12 MB refused,
+    a text file refused, a good picture previewed, removed, dropped by drag-and-drop, a post that appears first with a small
+    picture, survives a reload, from another page ends on the feed), Start a meeting (a real instant room on the server, hosted by
+    the person), and the sidebar: "People from your groups" → Message opens the chat in the drawer without leaving the page;
+    a scheduled meeting made by someone else appears without a reload; Paw appears in "Online now" within a minute; Join
+    opens the room page.
+  - Phone and tablet: bottom sheets (comments, activity, Create), no on-screen keyboard forced open, Enter is a new line on touch,
+    the toast above the bottom bar, "Message" opening the chat page, no sidebar below 1024 px (and it comes and goes when the window is
+    resized), no `/rooms` request until the sheet is opened, the like animation practically off under "reduce motion".
+- Not verified here: Safari and Firefox (only Chromium was available); a real touch device and the real Web Share sheet (touch
+  was emulated, the share sheet stubbed); the pictures from `picsum.photos` themselves (the sandbox cannot reach it, so a drawn
+  picture with the same address pattern was served); typing with a Burmese or Karen keyboard.
+
+### Real problems found while building this phase (all fixed, with a test)
+
+1. Sample comments were dated after "now" (a comment "now" under a post from 25 minutes ago).
+2. The drop zone flickered while a file crossed its own text (`dragleave` fires for children).
+3. A file dropped just outside the zone made the browser open it and leave the page, losing the post.
+4. The picture preview was a full-width square, which pushed the Post button below the fold on a laptop-height window.
+5. After removing the picture the focus was lost (the button that had it was gone).
+6. The new-chat picker and the sidebar could each ask the server for the members of the same group at the same moment; the
+   second request now joins the first.
+
+### Backend gaps and notes found in this phase
+
+- No feed endpoints (as in the prompt): feed, posts, likes, comments and shares are all sample data, listed in the README.
+- `GET /rooms?filter=upcoming` lists **scheduled** rooms only. A meeting someone starts right now in a chat reaches the
+  person as the `room_created` notice inside the chat ("Join meeting") and in `GET /rooms` without a filter, but not in
+  "Upcoming meetings". Worth deciding whether the sidebar should also show meetings that are live now.
+- `POST /rooms` requires a `name`; there is no server default, so "Start a meeting" makes one up (above).
+- A room not linked to a chat can be opened by anyone who has its id, but there is nothing in the interface yet to share the link
+  (Phase 4).
+- The chat drawer is docked in the same bottom-right corner as the sidebar, so an open drawer covers the lower part of it (the
+  collapsed tab does not: the sidebar leaves room for it). This follows the layout in the prompt; collapsing the drawer
+  brings the sidebar back.
+- Nothing blocked the phase.
 
 ## Phase 4: Video
 

@@ -79,3 +79,57 @@ export function formatListTime(iso: string, now: number, timeZone: string, local
   if (diff < 7) return formatter(locale, { timeZone: tz, weekday: 'short' }).format(new Date(iso))
   return formatter(locale, { timeZone: tz, day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(iso))
 }
+
+const relativeFormatters = new Map<string, Intl.RelativeTimeFormat>()
+
+/** A language the browser does not know (S'gaw Karen, for one) falls back to English instead of the browser's own language. */
+function relativeFormatter(locale: string): Intl.RelativeTimeFormat {
+  let found = relativeFormatters.get(locale)
+  if (!found) {
+    const supported = Intl.RelativeTimeFormat.supportedLocalesOf([locale]).length > 0
+    found = new Intl.RelativeTimeFormat(supported ? locale : 'en', { numeric: 'auto', style: 'short' })
+    relativeFormatters.set(locale, found)
+  }
+  return found
+}
+
+/**
+ * How long ago, for a post: "now", "5 min. ago", "3 hr. ago", "yesterday", "2 days ago", and from a week on the date.
+ * A time slightly in the future (the phone's clock is a little fast) counts as now.
+ */
+export function formatRelativeTime(iso: string, now: number, timeZone: string, locale: string): string {
+  const seconds = Math.max(0, Math.floor((now - Date.parse(iso)) / 1000))
+  const relative = relativeFormatter(locale)
+
+  if (seconds < 60) return relative.format(0, 'second')
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return relative.format(-minutes, 'minute')
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return relative.format(-hours, 'hour')
+  const days = Math.floor(hours / 24)
+  if (days < 7) return relative.format(-days, 'day')
+
+  const tz = safeTimeZone(timeZone)
+  const sameYear = dayKey(iso, tz).slice(0, 4) === dayKey(now, tz).slice(0, 4)
+  return formatter(locale, { timeZone: tz, day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }).format(new Date(iso))
+}
+
+/** The full date and time of a moment, for hovering over "5 min. ago" and for screen readers. */
+export function formatFullTime(iso: string, timeZone: string, locale: string): string {
+  return formatter(locale, { timeZone: safeTimeZone(timeZone), dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+}
+
+/** When a meeting starts: "Sat, 14 Mar, 9:09 AM" (with the year when it is not this year). */
+export function formatMeetingTime(iso: string, now: number, timeZone: string, locale: string): string {
+  const tz = safeTimeZone(timeZone)
+  const sameYear = dayKey(iso, tz).slice(0, 4) === dayKey(now, tz).slice(0, 4)
+  return formatter(locale, {
+    timeZone: tz,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(iso))
+}

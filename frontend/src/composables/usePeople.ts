@@ -26,7 +26,7 @@ export function usePeople(active: Ref<boolean>) {
     loading.value = true
     try {
       for (let start = 0; start < todo.length; start += PARALLEL) {
-        await Promise.all(todo.slice(start, start + PARALLEL).map((chat) => chats.loadDetails(chat.id).catch(() => undefined)))
+        await Promise.all(todo.slice(start, start + PARALLEL).map((chat) => chats.ensureMembers(chat.id).catch(() => undefined)))
       }
     } finally {
       loading.value = false

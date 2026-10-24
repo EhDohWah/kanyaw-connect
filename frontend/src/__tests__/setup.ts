@@ -2,6 +2,9 @@ import { afterEach, beforeEach, vi } from 'vitest'
 
 import { setSocketIdResolver, setUnauthorizedHandler } from '@/api/http'
 import { setLocale } from '@/i18n'
+import { createMockFeedService } from '@/mocks/feedService'
+import { setFeedService } from '@/services'
+import { useAuthStore } from '@/stores/auth'
 import { echoes, fakeEchoFactory } from '@/__tests__/fakeEcho'
 import { unmountAll } from '@/__tests__/helpers'
 
@@ -11,6 +14,16 @@ vi.mock('@/realtime/echo', () => ({ createEcho: (token: string) => fakeEchoFacto
 beforeEach(() => {
   echoes.length = 0
   window.localStorage.clear()
+  // The sample feed without its pause (150–400 ms a call), writing as whoever is signed in.
+  setFeedService(
+    createMockFeedService({
+      delay: () => 0,
+      currentUser: () => {
+        const user = useAuthStore().user
+        return user ? { id: user.id, name: user.name, avatar_url: user.avatar_url, avatar_thumb_url: user.avatar_thumb_url } : null
+      },
+    }),
+  )
   setLocale('en')
   // jsdom has no scrolling; the router asks for it after every navigation.
   window.scrollTo = vi.fn() as typeof window.scrollTo
@@ -21,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   unmountAll()
+  setFeedService(null)
   vi.useRealTimers()
   vi.restoreAllMocks()
   document.body.innerHTML = ''

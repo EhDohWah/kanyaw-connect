@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMember, makeMessage, page, person, restoreApi, signIn } from '@/__tests__/helpers'
+import { CHAT_ID, ME, PAW, deferred, fakeApi, makeChat, makeMember, makeMessage, page, person, restoreApi, signIn } from '@/__tests__/helpers'
 import { useChatsStore } from '@/stores/chats'
 
 beforeEach(() => {
@@ -277,5 +277,63 @@ describe('actions', () => {
     expect(chats.chats).toEqual([])
     expect(chats.viewingId).toBeNull()
     expect(chats.status).toBe('idle')
+  })
+})
+
+describe('knowing who is in a group', () => {
+  const group = (members = true) =>
+    makeChat({ id: 'g1', type: 'group', name: 'Committee', other_user: undefined, ...(members ? { members: [makeMember(person(ME, 'Eh Doh')), makeMember(person(PAW, 'Naw Paw Say'))] } : {}) })
+
+  it('asks the server for the members once, and remembers them', async () => {
+    const { calls } = fakeApi(() => ({ data: { data: group() } }))
+    const chats = useChatsStore()
+    chats.put(group(false))
+
+    const first = await chats.ensureMembers('g1')
+    const second = await chats.ensureMembers('g1')
+
+    expect(first.members).toHaveLength(2)
+    expect(second.members).toHaveLength(2)
+    expect(calls.filter((call) => call.url === '/chats/g1')).toHaveLength(1)
+  })
+
+  it('asks once when several screens ask at the same moment', async () => {
+    const wait = deferred<void>()
+    const { calls } = fakeApi(async () => {
+      await wait.promise
+      return { data: { data: group() } }
+    })
+    const chats = useChatsStore()
+    chats.put(group(false))
+
+    const all = Promise.all([chats.ensureMembers('g1'), chats.ensureMembers('g1'), chats.ensureMembers('g1')])
+    wait.resolve()
+    await all
+
+    expect(calls).toHaveLength(1)
+  })
+
+  it('asks again after a failure', async () => {
+    let up = false
+    const { calls } = fakeApi(() => (up ? { data: { data: group() } } : { network: true }))
+    const chats = useChatsStore()
+    chats.put(group(false))
+
+    await expect(chats.ensureMembers('g1')).rejects.toBeTruthy()
+    up = true
+    await chats.ensureMembers('g1')
+
+    expect(calls).toHaveLength(2)
+    expect(chats.get('g1')?.members).toHaveLength(2)
+  })
+
+  it('does not ask at all when the members are already known', async () => {
+    const { calls } = fakeApi(() => ({ data: { data: group() } }))
+    const chats = useChatsStore()
+    chats.put(group(true))
+
+    await chats.ensureMembers('g1')
+
+    expect(calls).toHaveLength(0)
   })
 })

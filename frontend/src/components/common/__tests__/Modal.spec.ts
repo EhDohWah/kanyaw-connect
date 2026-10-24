@@ -152,3 +152,80 @@ describe('Modal', () => {
     expect(document.getElementById('app')?.hasAttribute('inert')).toBe(false)
   })
 })
+
+describe('Modal: the side placement, the pinned footer and asking for the focus', () => {
+  function mountOpen(template: string) {
+    const Page = defineComponent({ components: { Modal }, template })
+    const app = document.createElement('div')
+    app.id = 'app'
+    document.body.append(app)
+    const wrapper = mount(Page, { attachTo: app, global: { plugins: [i18n] } })
+    return wrapper
+  }
+
+  it('is a centered dialog (a sheet from the bottom on phones) unless asked otherwise', async () => {
+    mountOpen(`<Modal :open="true" title="Plain"><p>Body</p></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(dialog()?.className).toContain('max-w-md')
+    expect(dialog()?.className).toContain('max-h-[90dvh]')
+    expect(dialog()?.className).not.toContain('md:h-dvh')
+    expect(dialog()?.parentElement?.className).toContain('sm:items-center')
+  })
+
+  it('"side" is a bottom sheet on phones and a full-height drawer on the right from 768 px', async () => {
+    mountOpen(`<Modal :open="true" title="Comments" placement="side"><p>Body</p></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(dialog()?.className).toContain('max-h-[85dvh]')
+    expect(dialog()?.className).toContain('md:h-dvh')
+    expect(dialog()?.className).toContain('md:w-[28rem]')
+    expect(dialog()?.parentElement?.className).toContain('md:justify-end')
+    expect(dialog()?.parentElement?.className).not.toContain('sm:items-center')
+  })
+
+  it('keeps everything a dialog promises when it is a side drawer: name, focus trap and Escape', async () => {
+    mountOpen(`<Modal :open="true" title="Comments" placement="side"><button id="inside">Inside</button></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(dialog()?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog()?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('Comments')
+    expect(dialog()?.contains(document.activeElement)).toBe(true)
+    expect(document.getElementById('app')?.hasAttribute('inert')).toBe(true)
+  })
+
+  it('shows a footer under the scrolling part, outside it, with a rule above', async () => {
+    mountOpen(`<Modal :open="true" title="With footer"><p id="body">Body</p><template #footer><button id="send">Send</button></template></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const footer = document.getElementById('send')?.parentElement
+    const scroller = document.getElementById('body')?.parentElement
+    expect(footer?.className).toContain('border-t')
+    expect(scroller?.className).toContain('overflow-y-auto')
+    expect(scroller?.contains(document.getElementById('send'))).toBe(false)
+    expect(footer?.previousElementSibling).toBe(scroller)
+  })
+
+  it('has no footer box at all when there is no footer', async () => {
+    mountOpen(`<Modal :open="true" title="Plain"><p id="body">Body</p></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const scroller = document.getElementById('body')?.parentElement
+    expect(scroller?.nextElementSibling).toBeNull()
+    expect(scroller?.className).toContain('pb-[max(1.25rem,env(safe-area-inset-bottom))]')
+  })
+
+  it('puts the focus on the control that asks for it, even in the footer or after other controls', async () => {
+    mountOpen(`<Modal :open="true" title="Typing"><button id="first">First</button><template #footer><textarea id="box" data-autofocus></textarea></template></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.activeElement?.id).toBe('box')
+  })
+
+  it('without such a control, keeps its old way: the first usable control', async () => {
+    mountOpen(`<Modal :open="true" title="Plain"><button id="first">First</button><textarea id="box"></textarea></Modal>`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.activeElement?.id).toBe('first')
+  })
+})

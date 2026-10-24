@@ -5,15 +5,17 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { lastEcho } from '@/__tests__/fakeEcho'
-import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMessage, makeUser, page, restoreApi, signIn, type Call } from '@/__tests__/helpers'
+import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMember, makeMessage, makeRoom, makeUser, page, person, restoreApi, settle, signIn, type Call } from '@/__tests__/helpers'
 import { useMessagingSession } from '@/composables/useMessagingSession'
 import { realtime } from '@/realtime'
 import { chatChannelHandlers } from '@/realtime/handlers'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
+import { useFeedStore } from '@/stores/feed'
 import { useMessagesStore } from '@/stores/messages'
 import { usePresenceStore } from '@/stores/presence'
 import { useRealtimeStore } from '@/stores/realtime'
+import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
 
 const Host = defineComponent({
@@ -72,11 +74,11 @@ describe('starting and stopping', () => {
     expect(useChatsStore().chats).toHaveLength(1)
   })
 
-  it('asks who is online among the people in direct chats', async () => {
+  it('asks who is online among the people it knows from the chats (after a short pause, so a burst is one lookup)', async () => {
     serve()
     await start()
 
-    expect(usePresenceStore().isOnline(PAW)).toBe(true)
+    await vi.waitFor(() => expect(usePresenceStore().isOnline(PAW)).toBe(true))
   })
 
   it('closes the connection and forgets everything when it goes away (signing out)', async () => {
@@ -294,5 +296,70 @@ describe('after the connection drops', () => {
     await flushPromises()
 
     expect(count(calls, '/chats')).toBe(before + 1)
+  })
+})
+
+describe('what the sidebar needs', () => {
+  const KLER = '0195e2c4-0005-7a04-8104-5f3a9c007bbc'
+
+  it('looks up who is online among group members too, once for everyone who turned up together', async () => {
+    const { calls } = serve()
+    await start()
+    await vi.waitFor(() => expect(count(calls, '/users/presence')).toBe(1))
+
+    // two groups open one just after the other (separate answers from the server, a few milliseconds apart)
+    const chats = useChatsStore()
+    chats.put(makeChat({ id: 'g1', type: 'group', name: 'G1', other_user: undefined, members: [makeMember(person(ME, 'Eh Doh')), makeMember(person(KLER, 'Saw Kler Wah'))] }))
+    await settle(2)
+    chats.put(makeChat({ id: 'g2', type: 'group', name: 'G2', other_user: undefined, members: [makeMember(person(ME, 'Eh Doh')), makeMember(person('mu', 'Naw Mu Moo'))] }))
+
+    await vi.waitFor(() => expect(count(calls, '/users/presence')).toBe(2))
+    const last = calls.filter((call) => call.url === '/users/presence').at(-1)
+    expect(decodeURIComponent(last?.uri ?? '')).toContain(`ids[]=${KLER}`)
+    expect(decodeURIComponent(last?.uri ?? '')).toContain('ids[]=mu')
+  })
+
+  it('forgets the feed and the meetings when it goes away (signing out), so the next person starts clean', async () => {
+    serve()
+    const wrapper = await start()
+    const feed = useFeedStore()
+    const rooms = useRoomsStore()
+    feed.dismissNote()
+    rooms.upcoming = [makeRoom()]
+    rooms.status = 'ready'
+
+    wrapper.unmount()
+
+    expect(feed.noteDismissed).toBe(false)
+    expect(rooms.upcoming).toEqual([])
+    expect(rooms.status).toBe('idle')
+  })
+
+  it('refreshes the upcoming meetings when a meeting is announced in a chat (and only then)', async () => {
+    const { calls } = serve((call) => (call.url === '/rooms' ? { data: page([makeRoom()]) } : undefined))
+    await start()
+    const rooms = useRoomsStore()
+    await rooms.fetchUpcoming()
+    const before = count(calls, '/rooms')
+
+    const announcement = makeMessage({ type: 'system', sender_id: null, sender: null, content: 'Naw Paw started a video room', metadata: { event: 'room_created', room_id: 'r1', host_id: PAW } })
+    lastEcho().get(`private-user.${ME}`)!.emit('.message.sent', { message: announcement })
+    await flushPromises()
+    expect(count(calls, '/rooms')).toBe(before + 1)
+
+    lastEcho().get(`private-user.${ME}`)!.emit('.message.sent', { message: makeMessage({ content: 'just words' }) })
+    await flushPromises()
+    expect(count(calls, '/rooms')).toBe(before + 1)
+  })
+
+  it('does not fetch meetings for an announcement when the list was never shown', async () => {
+    const { calls } = serve((call) => (call.url === '/rooms' ? { data: page([]) } : undefined))
+    await start()
+
+    const announcement = makeMessage({ type: 'system', sender_id: null, sender: null, metadata: { event: 'room_created', room_id: 'r1', host_id: PAW } })
+    lastEcho().get(`private-user.${ME}`)!.emit('.message.sent', { message: announcement })
+    await flushPromises()
+
+    expect(count(calls, '/rooms')).toBe(0)
   })
 })

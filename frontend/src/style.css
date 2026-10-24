@@ -108,3 +108,20 @@
     }
   }
 }
+
+/* The one small movement on the like button: a quick grow and settle when something is liked. */
+@keyframes like-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility animate-like-pop {
+  animation: like-pop 250ms ease-out;
+}

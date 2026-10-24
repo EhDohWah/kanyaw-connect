@@ -118,6 +118,24 @@ export const useChatsStore = defineStore('chats', () => {
     return put(await chatsApi.getChat(chatId))
   }
 
+  const memberRequests = new Map<string, Promise<Chat>>()
+
+  /**
+   * The chat with its members, asking the server only if they are not known yet (cached for the session), and only
+   * once when several screens ask at the same time (the people pickers and the sidebar both want them).
+   */
+  function ensureMembers(chatId: string): Promise<Chat> {
+    const known = get(chatId)
+    if (known?.members) return Promise.resolve(known)
+
+    const running = memberRequests.get(chatId)
+    if (running) return running
+
+    const request = loadDetails(chatId).finally(() => memberRequests.delete(chatId))
+    memberRequests.set(chatId, request)
+    return request
+  }
+
   /** A chat we may not have yet (a deep link, or an event about a chat that is not in the list). */
   async function ensure(chatId: string): Promise<Chat> {
     return get(chatId) ?? loadDetails(chatId)
@@ -245,6 +263,7 @@ export const useChatsStore = defineStore('chats', () => {
     loadingMore.value = false
     viewingId.value = null
     lastLeftId.value = null
+    memberRequests.clear()
   }
 
   return {
@@ -263,6 +282,7 @@ export const useChatsStore = defineStore('chats', () => {
     fetchChats,
     loadMore,
     loadDetails,
+    ensureMembers,
     ensure,
     receiveMessage,
     refreshPreview,

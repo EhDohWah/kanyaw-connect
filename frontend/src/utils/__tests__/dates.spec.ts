@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dayKey, formatClock, formatDayLabel, formatListTime, safeTimeZone } from '@/utils/dates'
+import { dayKey, formatClock, formatDayLabel, formatFullTime, formatListTime, formatMeetingTime, formatRelativeTime, safeTimeZone } from '@/utils/dates'
 
 const labels = { today: 'Today', yesterday: 'Yesterday' }
 const now = Date.parse('2026-03-14T12:00:00Z') // a Saturday
@@ -58,5 +58,57 @@ describe('safeTimeZone', () => {
 
   it('still formats with a bad zone', () => {
     expect(formatClock('2026-03-14T09:05:00Z', 'Not/AZone', 'en-GB')).toMatch(/^0?9:05$/)
+  })
+})
+
+describe('formatRelativeTime', () => {
+  const ago = (ms: number): string => new Date(now - ms).toISOString()
+  const SECOND = 1000
+  const MINUTE = 60 * SECOND
+  const HOUR = 60 * MINUTE
+  const DAY = 24 * HOUR
+
+  it('says "now" for the first minute', () => {
+    expect(formatRelativeTime(ago(0), now, 'UTC', 'en')).toBe('now')
+    expect(formatRelativeTime(ago(59 * SECOND), now, 'UTC', 'en')).toBe('now')
+  })
+
+  it('counts whole minutes, hours and days (never rounding up into the next unit)', () => {
+    expect(formatRelativeTime(ago(MINUTE), now, 'UTC', 'en')).toBe('1 min. ago')
+    expect(formatRelativeTime(ago(59 * MINUTE + 59 * SECOND), now, 'UTC', 'en')).toBe('59 min. ago')
+    expect(formatRelativeTime(ago(HOUR), now, 'UTC', 'en')).toBe('1 hr. ago')
+    expect(formatRelativeTime(ago(23 * HOUR + 59 * MINUTE), now, 'UTC', 'en')).toBe('23 hr. ago')
+    expect(formatRelativeTime(ago(DAY), now, 'UTC', 'en')).toBe('yesterday')
+    expect(formatRelativeTime(ago(3 * DAY), now, 'UTC', 'en')).toBe('3 days ago')
+    expect(formatRelativeTime(ago(6 * DAY + 23 * HOUR), now, 'UTC', 'en')).toBe('6 days ago')
+  })
+
+  it('shows the date from a week on, with the year only when it is not this year', () => {
+    expect(formatRelativeTime(ago(7 * DAY), now, 'UTC', 'en')).toBe('Mar 7')
+    expect(formatRelativeTime('2025-12-31T10:00:00Z', now, 'UTC', 'en')).toBe('Dec 31, 2025')
+  })
+
+  it('treats a time a little in the future (a fast phone clock) as now', () => {
+    expect(formatRelativeTime(new Date(now + 2 * MINUTE).toISOString(), now, 'UTC', 'en')).toBe('now')
+  })
+
+  it('falls back to English for a language the browser does not know (S’gaw Karen)', () => {
+    expect(formatRelativeTime(ago(5 * MINUTE), now, 'UTC', 'ksw')).toBe('5 min. ago')
+  })
+})
+
+describe('formatFullTime', () => {
+  it('writes date and time in the person’s zone', () => {
+    expect(formatFullTime('2026-03-14T09:09:00Z', 'Asia/Bangkok', 'en-US')).toMatch(/Mar 14, 2026.*4:09\s?PM/)
+  })
+})
+
+describe('formatMeetingTime', () => {
+  it('shows weekday, date and time in the person’s zone, without the year in the current year', () => {
+    expect(formatMeetingTime('2026-03-14T09:09:00Z', now, 'Asia/Bangkok', 'en-US')).toMatch(/^Sat, Mar 14, 4:09\s?PM$/)
+  })
+
+  it('adds the year for another year', () => {
+    expect(formatMeetingTime('2027-01-05T09:00:00Z', now, 'UTC', 'en-US')).toMatch(/2027/)
   })
 })

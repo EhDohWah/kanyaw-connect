@@ -12,6 +12,7 @@ import CreateMenu from '@/components/layout/CreateMenu.vue'
 import RightSidebar from '@/components/layout/RightSidebar.vue'
 import SideNav from '@/components/layout/SideNav.vue'
 import { useHeartbeat } from '@/composables/useHeartbeat'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useMessagingSession } from '@/composables/useMessagingSession'
 import { useAuthStore } from '@/stores/auth'
 import { useRealtimeStore } from '@/stores/realtime'
@@ -21,6 +22,7 @@ const { t } = useI18n()
 const route = useRoute()
 const auth = useAuthStore()
 const connection = useRealtimeStore()
+const wide = useMediaQuery('(min-width: 1024px)')
 
 useHeartbeat()
 useMessagingSession()
@@ -70,9 +72,11 @@ async function retry(): Promise<void> {
       <RouterView v-else />
     </main>
 
-    <!-- Wide screens only: who is online and what is coming up. -->
+    <!-- Wide screens only: who is online and what is coming up. Not made at all on the others, so nothing is fetched
+         for it; they reach the same content from a button on Home. -->
     <aside
-      class="sticky top-0 hidden h-dvh w-80 shrink-0 overflow-y-auto border-l border-border lg:block"
+      v-if="wide"
+      class="sticky top-0 h-dvh w-80 shrink-0 overflow-y-auto border-l border-border"
       :aria-label="t('shell.sidebarTitle')"
     >
       <RightSidebar />

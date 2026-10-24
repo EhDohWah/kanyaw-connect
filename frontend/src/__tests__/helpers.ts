@@ -245,3 +245,111 @@ export function signedInStores(pinia: Pinia, user: User = makeUser({ id: ME })):
   auth.token = '1|secret-token'
   auth.user = user
 }
+
+/* ------------------------------------------------------------------------------------------ the screen --- */
+
+/** jsdom has no `matchMedia`. This says which media queries match, as a real browser would. */
+export function mockMedia(matches: (query: string) => boolean): void {
+  window.matchMedia = ((query: string) => ({
+    matches: matches(query),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  })) as unknown as typeof window.matchMedia
+}
+
+/** A wide screen (1024 px and up) or a narrower one; `finePointer` says whether there is a mouse. */
+export function screenIs(wide: boolean, finePointer = false): void {
+  mockMedia((query) => (query.includes('min-width: 1024px') ? wide : query.includes('pointer: fine') ? finePointer : false))
+}
+
+/** Back to a browser without `matchMedia`, which is how every test starts. */
+export function restoreMedia(): void {
+  // @ts-expect-error jsdom has no matchMedia: put things back the way they were
+  delete window.matchMedia
+}
+
+/* ------------------------------------------------------------------------------------- feed fixtures --- */
+
+import type { FeedComment, FeedPost } from '@/types/feed'
+import type { FeedService } from '@/services/feed'
+
+export function makePost(overrides: Partial<FeedPost> = {}): FeedPost {
+  return {
+    id: 'post-1',
+    author: person('author-1', 'Naw Paw'),
+    caption: 'Market day was busy this morning.',
+    image_url: 'https://picsum.photos/seed/kc-market/800/800',
+    created_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    like_count: 18,
+    liked_by_me: false,
+    comment_count: 2,
+    ...overrides,
+  }
+}
+
+export function makeComment(overrides: Partial<FeedComment> = {}): FeedComment {
+  return {
+    id: 'comment-1',
+    post_id: 'post-1',
+    author: person('author-2', 'Naw Mu'),
+    content: 'Save me some mangoes!',
+    created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    ...overrides,
+  }
+}
+
+/** A feed service whose every call can be replaced by a test. By default it answers at once with one post. */
+export function fakeFeed(over: Partial<FeedService> = {}): FeedService {
+  return {
+    listPosts: async () => ({ data: [makePost()], next_cursor: null }),
+    createPost: async (input) => makePost({ id: 'post-new', caption: input.caption, like_count: 0, comment_count: 0 }),
+    likePost: async () => ({ like_count: 19, liked_by_me: true }),
+    unlikePost: async () => ({ like_count: 18, liked_by_me: false }),
+    listComments: async () => ({ data: [], next_cursor: null }),
+    addComment: async (postId, content) => makeComment({ id: 'comment-new', post_id: postId, content }),
+    postLink: (postId) => `https://kanyaw.example/?post=${postId}`,
+    ...over,
+  }
+}
+
+/** A promise a test settles by hand: to hold a request open and see what the screen does meanwhile. */
+export function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
+/* ------------------------------------------------------------------------------------ room fixtures --- */
+
+import type { Room } from '@/types/room'
+
+export function makeRoom(overrides: Partial<Room> = {}): Room {
+  return {
+    id: '0195e2c4-001a-7a19-8119-5f3a9c030557',
+    type: 'scheduled',
+    name: 'Committee meeting',
+    description: 'Monthly planning call',
+    host: person(ME, 'Saw Eh Doh'),
+    host_id: ME,
+    chat_id: CHAT_ID,
+    has_password: false,
+    waiting_room_enabled: true,
+    is_locked: false,
+    max_participants: 20,
+    scheduled_at: '2026-03-16T19:00:00.000000Z',
+    duration_minutes: 60,
+    status: 'waiting',
+    started_at: null,
+    ended_at: null,
+    recording_enabled: false,
+    created_at: '2026-03-14T09:09:58.722954Z',
+    present_count: 0,
+    my_participation: { role: 'host', admission: 'admitted' },
+    ...overrides,
+  }
+}

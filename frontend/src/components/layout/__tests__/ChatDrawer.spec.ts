@@ -1,23 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { CHAT_ID, PAW, fakeApi, makeChat, makeMessage, mountApp, page, person, restoreApi, settle, signedInStores } from '@/__tests__/helpers'
+import { CHAT_ID, PAW, fakeApi, makeChat, makeMessage, mountApp, page, person, restoreApi, restoreMedia, screenIs, settle, signedInStores } from '@/__tests__/helpers'
 import ChatDrawer from '@/components/layout/ChatDrawer.vue'
 import { useChatsStore } from '@/stores/chats'
 import { useUiStore } from '@/stores/ui'
 
-function screenIs(wide: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: wide && query.includes('min-width: 1024px'),
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-  })) as unknown as typeof window.matchMedia
-}
-
 beforeEach(() => screenIs(true))
 afterEach(() => {
   restoreApi()
-  // @ts-expect-error jsdom has no matchMedia: put things back the way they were
-  delete window.matchMedia
+  restoreMedia()
 })
 
 function serve() {

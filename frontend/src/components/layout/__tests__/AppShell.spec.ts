@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fakeApi, makeUser, mountApp, page, restoreApi, settle, signIn } from '@/__tests__/helpers'
+import { fakeApi, fakeFeed, makePost, makeUser, mountApp, page, restoreApi, restoreMedia, screenIs, settle, signIn } from '@/__tests__/helpers'
 import App from '@/App.vue'
+import { setFeedService } from '@/services'
 
 beforeEach(() => signIn())
-afterEach(restoreApi)
+afterEach(() => {
+  restoreApi()
+  restoreMedia()
+})
 
 function serve(extra: Parameters<typeof fakeApi>[0] = () => ({ status: 204 })) {
   return fakeApi((call) => {
@@ -89,13 +93,26 @@ describe('AppShell', () => {
     expect(calls.filter((call) => call.url === '/me/heartbeat')).toHaveLength(1)
   })
 
-  it('shows the right sidebar placeholder for wide screens', async () => {
+  it('shows "People & activity" in a labelled column on wide screens', async () => {
+    screenIs(true)
     serve()
     const { wrapper } = await open('/')
 
     const sidebar = wrapper.get('aside')
     expect(sidebar.attributes('aria-label')).toBe('People & activity')
-    expect(sidebar.text()).toContain('Who is online')
+    expect(sidebar.text()).toContain('Online now')
+    expect(sidebar.text()).toContain('Upcoming meetings')
+    expect(sidebar.text()).toContain('People from your groups')
+  })
+
+  it('does not make the column at all on narrower screens (and so asks for none of its data)', async () => {
+    screenIs(false)
+    const { calls } = serve()
+    const { wrapper } = await open('/')
+    await settle(4)
+
+    expect(wrapper.find('aside').exists()).toBe(false)
+    expect(calls.some((call) => call.url === '/rooms')).toBe(false)
   })
 
   it('offers "Try again" instead of throwing the person out when the server cannot be reached at start', async () => {
@@ -127,6 +144,36 @@ describe('AppShell', () => {
     expect(wrapper.get('[role=status]').text()).toContain('You are offline')
   })
 
+  it('keeps the posts that were loaded when the person goes to another page and comes back, without asking again', async () => {
+    const listPosts = vi.fn(async () => ({ data: [makePost({ id: 'a', caption: 'Kept in memory' })], next_cursor: null }))
+    setFeedService(fakeFeed({ listPosts }))
+    serve()
+    const { wrapper, router } = await open('/')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Kept in memory'))
+
+    await router.push('/profile')
+    await settle(3)
+    await router.push('/')
+    await settle(3)
+
+    expect(wrapper.text()).toContain('Kept in memory')
+    expect(listPosts).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets the posts when the person signs out, so the next one starts with a fresh feed', async () => {
+    const listPosts = vi.fn(async () => ({ data: [makePost({ id: 'a', caption: 'First person only' })], next_cursor: null }))
+    setFeedService(fakeFeed({ listPosts }))
+    serve()
+    const { wrapper, pinia } = await open('/')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('First person only'))
+    const { useFeedStore } = await import('@/stores/feed')
+
+    wrapper.unmount()
+
+    expect(useFeedStore(pinia).posts).toEqual([])
+    expect(useFeedStore(pinia).status).toBe('idle')
+  })
+
   it('opens the Create menu as a dialog and closes it with Escape', async () => {
     serve()
     const { wrapper } = await open('/')
@@ -134,8 +181,9 @@ describe('AppShell', () => {
     await wrapper.get('nav button').trigger('click')
     const dialog = document.body.querySelector('[role="dialog"]')
     expect(dialog).not.toBeNull()
+    expect(dialog?.textContent).toContain('Post')
     expect(dialog?.textContent).toContain('Start a meeting')
-    expect(dialog?.textContent).toContain('Coming soon')
+    expect(dialog?.textContent).not.toContain('Coming soon')
 
     dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull())

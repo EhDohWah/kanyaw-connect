@@ -4,9 +4,11 @@ The web app for Kanyaw Connect: private chat, community feed and video meetings 
 single-page app (Vue 3) that talks to the Laravel API in the parent folder. Build progress is tracked in
 [`PROGRESS.md`](PROGRESS.md); the API it follows is [`../docs/API.md`](../docs/API.md).
 
-> **Status:** Phase 2 of 5 (messaging) is built: sign in and register, the responsive shell, profile with photo, presence,
-> and private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread counts,
-> chat drawer). The feed and meetings are placeholders until their phases.
+> **Status:** Phase 3 of 5 (feed and sidebar) is built: sign in and register, the responsive shell, profile with photo,
+> presence, private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread
+> counts, chat drawer), a feed of sample posts (likes, comments, share, new posts), the Create dialog (post, start a
+> meeting) and the "People & activity" sidebar (who is online, upcoming meetings, people from your groups). Meeting rooms
+> and video are placeholders until Phase 4.
 
 ## Run it
 
@@ -48,7 +50,7 @@ All are read at build time, and are public (they end up in the browser): never p
 | `VITE_API_BASE_URL` | The API, including `/api/v1`, no trailing slash |
 | `VITE_REVERB_APP_KEY` | Reverb app key (public; it only identifies the application). Needed for real-time chat |
 | `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Where the WebSocket server is, `http` or `https` |
-| `VITE_FEED_SOURCE` | `mock` (sample posts) or `api` (when the backend has a feed). Used from Phase 3 |
+| `VITE_FEED_SOURCE` | `mock` (sample posts: the default) or `api` (for when the backend has a feed: today it answers that there is none) |
 
 The LiveKit address is not configured here: the API sends it when a meeting is joined.
 
@@ -57,13 +59,16 @@ The LiveKit address is not configured here: the API sends it when a meeting is j
 ```
 src/
   api/          one typed module per resource; http.ts is the only place that uses axios
-  components/   layout/ (shell, navigation, chat drawer), chat/ (list, conversation, composer, dialogs),
-                common/ (buttons, inputs, dialog, avatar, states)
-  composables/  logic shared between components (heartbeat, messaging session, open conversation, people)
+  components/   layout/ (shell, navigation, chat drawer, Create dialog, the "People & activity" sidebar), chat/ (list,
+                conversation, composer, dialogs), feed/ (post card, comments, picture drop zone, post form), rooms/ (meeting
+                row), common/ (buttons, inputs, dialog, avatar, states)
+  composables/  logic shared between components (heartbeat, messaging session, open conversation, people, infinite scroll)
   i18n/         en.json (complete), my.json and ksw.json (same keys, to be translated)
   realtime/     the WebSocket: Echo, the channel manager (what is joined, and when) and what each event does
+  mocks/        the sample feed: people, posts, comments, and the service that serves them from the browser
   router/       routes and sign-in guards
-  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime
+  services/     what the feed needs from a server (an interface); which implementation is used is set by VITE_FEED_SOURCE
+  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime, feed, rooms
   types/        types that mirror the objects in docs/API.md
   utils/        small helpers: merging messages, dates, links in text, message rules, image shrinking, redirects, focus trap
   views/        one file per page
@@ -104,9 +109,11 @@ These parts of the product have no backend yet, or are not built yet:
 
 | Feature | State |
 |---|---|
-| Feed, posts, likes, comments, shares | The backend has no endpoints. Built with sample data in Phase 3 |
+| Feed, posts, likes, comments, shares | The backend has no endpoints. Built with sample data behind `src/services/feed.ts` (`VITE_FEED_SOURCE=mock`). The 30 sample posts are by invented people, with pictures from `picsum.photos`; what a person adds (posts, comments, likes) stays in their own browser (`localStorage`) and is not seen by anyone else. The feed says so in a note at the top |
+| Writing a post | Mock: the picture is shrunk to a small copy and kept in the browser; nothing is sent anywhere |
+| Sharing a post | The link (`/?post=<id>`) opens the feed: there is no page for one post |
 | Chats and messages | Connected (Phase 2). Not built: recording voice messages, "seen by", encrypted chats (read-only notice) |
-| Meetings and video | Backend ready; screens arrive in Phase 4 |
+| Meetings and video | Backend ready; screens arrive in Phase 4. "Start a meeting" and the "Upcoming meetings" list already use the real API, but `/rooms/:id` is a placeholder until then |
 | Push notifications | Backend ready; arrive in Phase 5 |
 | "Forgot password", changing the password, email verification | The backend has no endpoints |
 | Finding people you share no chat with | The backend has no user search |
