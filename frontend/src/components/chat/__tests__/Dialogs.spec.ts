@@ -364,7 +364,7 @@ describe('new chat', () => {
     await settle(4)
 
     expect(dialog()?.textContent).toContain('Naw Paw Say')
-    expect(dialog()?.textContent).toContain('Some people from your groups could not be loaded.')
+    expect(dialog()?.textContent).toContain('Some people could not be loaded.')
     fail = false
     byText('Try again', dialog()!)?.click()
     await settle(4)
@@ -429,7 +429,7 @@ describe('people picker', () => {
     const { wrapper } = await mountPicker({ failed: true })
 
     expect(wrapper.findAll('li')).toHaveLength(3)
-    expect(wrapper.text()).toContain('Some people from your groups could not be loaded.')
+    expect(wrapper.text()).toContain('Some people could not be loaded.')
     await wrapper.findAll('button').find((b) => b.text() === 'Try again')!.trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
 

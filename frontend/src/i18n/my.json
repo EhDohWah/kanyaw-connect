@@ -331,7 +331,7 @@
     "openFailed": "The chat could not be opened.",
     "selected": "{count} selected",
     "loadFailed": "Couldn't load the people from your chats.",
-    "someMissing": "Some people from your groups could not be loaded."
+    "someMissing": "Some people could not be loaded."
   },
   "feed": {
     "note": "Preview — sample posts. Posting is not live yet.",
