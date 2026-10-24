@@ -5,21 +5,25 @@ import { RouterView, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 import ErrorState from '@/components/common/ErrorState.vue'
+import ChatDialogs from '@/components/chat/ChatDialogs.vue'
 import BottomBar from '@/components/layout/BottomBar.vue'
+import ChatDrawer from '@/components/layout/ChatDrawer.vue'
 import CreateMenu from '@/components/layout/CreateMenu.vue'
 import RightSidebar from '@/components/layout/RightSidebar.vue'
 import SideNav from '@/components/layout/SideNav.vue'
 import { useHeartbeat } from '@/composables/useHeartbeat'
-import { useOnline } from '@/composables/useOnline'
+import { useMessagingSession } from '@/composables/useMessagingSession'
 import { useAuthStore } from '@/stores/auth'
+import { useRealtimeStore } from '@/stores/realtime'
 import { errorMessage } from '@/utils/errorMessage'
 
 const { t } = useI18n()
 const route = useRoute()
 const auth = useAuthStore()
-const online = useOnline()
+const connection = useRealtimeStore()
 
 useHeartbeat()
+useMessagingSession()
 
 const retrying = ref(false)
 async function retry(): Promise<void> {
@@ -49,12 +53,12 @@ async function retry(): Promise<void> {
       ]"
     >
       <div
-        v-if="!online"
+        v-if="connection.showOffline"
         class="flex items-center gap-2 border-b border-border bg-surface px-4 py-2 text-sm text-text"
         role="status"
       >
         <WifiOff class="size-4 shrink-0" aria-hidden="true" />
-        {{ t('shell.offline') }}
+        {{ connection.browserOnline ? t('shell.reconnecting') : t('shell.offline') }}
       </div>
 
       <ErrorState
@@ -75,6 +79,8 @@ async function retry(): Promise<void> {
     </aside>
 
     <BottomBar v-if="!route.meta.immersive" />
+    <ChatDrawer />
     <CreateMenu />
+    <ChatDialogs />
   </div>
 </template>

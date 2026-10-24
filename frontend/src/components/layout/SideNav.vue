@@ -5,11 +5,13 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 import { NAV_ENTRIES } from '@/components/layout/navigation'
+import { useChatsStore } from '@/stores/chats'
 import { useUiStore } from '@/stores/ui'
 
 const { t } = useI18n()
 const route = useRoute()
 const ui = useUiStore()
+const chats = useChatsStore()
 
 function isActive(entry: (typeof NAV_ENTRIES)[number]): boolean {
   return entry.exact ? route.path === entry.to : route.path === entry.to || route.path.startsWith(`${entry.to}/`)
@@ -42,6 +44,13 @@ function isActive(entry: (typeof NAV_ENTRIES)[number]): boolean {
         >
           <component :is="entry.icon" class="size-5 shrink-0" aria-hidden="true" />
           <span class="sr-only lg:not-sr-only">{{ t(entry.label) }}</span>
+          <span
+            v-if="entry.name === 'chats' && chats.totalUnread > 0"
+            class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary lg:ml-auto"
+          >
+            <span aria-hidden="true">{{ chats.totalUnread > 99 ? '99+' : chats.totalUnread }}</span>
+            <span class="sr-only">{{ t('nav.unread', { count: chats.totalUnread }) }}</span>
+          </span>
         </RouterLink>
       </li>
     </ul>

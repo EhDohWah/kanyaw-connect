@@ -4,11 +4,13 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 import { BOTTOM_BAR_ENTRIES, type NavEntry } from '@/components/layout/navigation'
+import { useChatsStore } from '@/stores/chats'
 import { useUiStore } from '@/stores/ui'
 
 const { t } = useI18n()
 const route = useRoute()
 const ui = useUiStore()
+const chats = useChatsStore()
 
 // The Create button sits in the middle: two places on each side.
 const left = BOTTOM_BAR_ENTRIES.slice(0, 2)
@@ -34,7 +36,16 @@ function isActive(entry: NavEntry): boolean {
             isActive(entry) ? 'text-primary' : 'text-text-muted',
           ]"
         >
-          <component :is="entry.icon" class="size-6" aria-hidden="true" />
+          <span class="relative">
+            <component :is="entry.icon" class="size-6" aria-hidden="true" />
+            <span
+              v-if="entry.name === 'chats' && chats.totalUnread > 0"
+              class="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold leading-none text-on-primary"
+            >
+              <span aria-hidden="true">{{ chats.totalUnread > 99 ? '99+' : chats.totalUnread }}</span>
+              <span class="sr-only">{{ t('nav.unread', { count: chats.totalUnread }) }}</span>
+            </span>
+          </span>
           {{ t(entry.label) }}
         </RouterLink>
       </li>
@@ -59,7 +70,16 @@ function isActive(entry: NavEntry): boolean {
             isActive(entry) ? 'text-primary' : 'text-text-muted',
           ]"
         >
-          <component :is="entry.icon" class="size-6" aria-hidden="true" />
+          <span class="relative">
+            <component :is="entry.icon" class="size-6" aria-hidden="true" />
+            <span
+              v-if="entry.name === 'chats' && chats.totalUnread > 0"
+              class="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold leading-none text-on-primary"
+            >
+              <span aria-hidden="true">{{ chats.totalUnread > 99 ? '99+' : chats.totalUnread }}</span>
+              <span class="sr-only">{{ t('nav.unread', { count: chats.totalUnread }) }}</span>
+            </span>
+          </span>
           {{ t(entry.label) }}
         </RouterLink>
       </li>

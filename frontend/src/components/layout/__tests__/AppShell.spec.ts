@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fakeApi, makeUser, mountApp, restoreApi, settle, signIn } from '@/__tests__/helpers'
+import { fakeApi, makeUser, mountApp, page, restoreApi, settle, signIn } from '@/__tests__/helpers'
 import App from '@/App.vue'
 
 beforeEach(() => signIn())
 afterEach(restoreApi)
 
 function serve(extra: Parameters<typeof fakeApi>[0] = () => ({ status: 204 })) {
-  return fakeApi((call) => (call.url === '/me' && call.method === 'get' ? { data: { data: makeUser() } } : extra(call)))
+  return fakeApi((call) => {
+    if (call.url === '/me' && call.method === 'get') return { data: { data: makeUser() } }
+    if (call.url === '/chats' && call.method === 'get') return { data: page([]) }
+    return extra(call)
+  })
 }
 
 /** `attached` puts the app in the real page: needed when the test looks at focus, which detached elements cannot have. */

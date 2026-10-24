@@ -20,7 +20,14 @@
     "dismiss": "Dismiss",
     "offline": "Offline",
     "navigation": "Navigation",
-    "menu": "Menu"
+    "menu": "Menu",
+    "confirm": "Confirm",
+    "search": "Search",
+    "clear": "Clear",
+    "next": "Next",
+    "done": "Done",
+    "you": "You",
+    "unknown": "Unknown"
   },
   "nav": {
     "home": "Home",
@@ -29,7 +36,8 @@
     "profile": "Profile",
     "settings": "Settings",
     "create": "Create",
-    "main": "Main navigation"
+    "main": "Main navigation",
+    "unread": "{count} unread"
   },
   "languages": {
     "en": "English",
@@ -74,7 +82,8 @@
     "sidebarTitle": "People & activity",
     "sidebarText": "Who is online and your upcoming meetings will show up here.",
     "offline": "You are offline. Messages will send when the connection is back.",
-    "logo": "Kanyaw Connect home"
+    "logo": "Kanyaw Connect home",
+    "reconnecting": "Connection lost. Reconnecting…"
   },
   "create": {
     "title": "Create",
@@ -128,5 +137,164 @@
     "title": "Page not found",
     "text": "The page you are looking for does not exist or has moved.",
     "home": "Go to home"
+  },
+  "chat": {
+    "title": "Messages",
+    "untitled": "Chat",
+    "someone": "Someone",
+    "newChat": "New chat",
+    "newGroup": "New group",
+    "noMessagesYet": "No messages yet",
+    "encryptedMessage": "Encrypted message",
+    "online": "Online",
+    "offline": "Offline",
+    "members": "{count} members",
+    "pinned": "Pinned",
+    "muted": "Muted",
+    "archived": "Archived",
+    "unreadCount": "{count} unread messages",
+    "list": {
+      "label": "Your chats",
+      "loadError": "Your chats could not be loaded.",
+      "showMore": "Show more chats",
+      "loadingMore": "Loading more chats…",
+      "emptyTitle": "No chats yet",
+      "emptyText": "Start a chat with someone from your community, or create a group."
+    },
+    "preview": {
+      "you": "You: {text}",
+      "person": "{name}: {text}",
+      "photo": "Photo",
+      "voice": "Voice message",
+      "file": "File"
+    },
+    "system": {
+      "roomCreated": "{name} started a video meeting",
+      "joinMeeting": "Join meeting"
+    },
+    "conversation": {
+      "loadError": "This conversation could not be loaded.",
+      "notFound": "This chat does not exist, or you are not in it.",
+      "gone": "You are no longer in this chat.",
+      "backToChats": "Back to chats",
+      "back": "Back",
+      "openFullPage": "Open in full page",
+      "info": "Chat info",
+      "loadOlder": "Load older messages",
+      "loadingOlder": "Loading older messages…",
+      "olderError": "Older messages could not be loaded.",
+      "emptyTitle": "Say hello",
+      "emptyText": "There are no messages yet. Write the first one.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "jumpToLatest": "Jump to latest",
+      "newMessages": "{count} new messages",
+      "messages": "Messages"
+    },
+    "composer": {
+      "placeholder": "Write a message",
+      "captionPlaceholder": "Add a caption",
+      "send": "Send message",
+      "attach": "Attach a file",
+      "removeAttachment": "Remove attachment",
+      "replyingTo": "Replying to {name}",
+      "editing": "Editing message",
+      "cancelReply": "Cancel reply",
+      "cancelEdit": "Cancel editing",
+      "saveEdit": "Save changes",
+      "tooLarge": "That file is larger than 25 MB.",
+      "editFailed": "The message could not be changed."
+    },
+    "delete": {
+      "title": "Delete this message?",
+      "text": "It disappears for everyone in this chat. This cannot be undone.",
+      "failed": "The message could not be deleted."
+    },
+    "viewer": {
+      "title": "Photo",
+      "download": "Download photo"
+    },
+    "typing": {
+      "one": "{name} is typing…",
+      "two": "{first} and {second} are typing…",
+      "many": "Several people are typing…"
+    },
+    "encrypted": {
+      "title": "Encrypted chat",
+      "notice": "This chat is end-to-end encrypted. Encrypted chats are coming soon to this app."
+    },
+    "drawer": {
+      "label": "Messages",
+      "collapse": "Collapse messages",
+      "expand": "Open messages",
+      "backToList": "Back to the list"
+    }
+  },
+  "message": {
+    "sending": "Sending…",
+    "uploading": "Uploading {percent}%",
+    "sent": "Sent",
+    "failed": "Not sent",
+    "retry": "Tap to retry",
+    "discard": "Discard",
+    "edited": "edited",
+    "actions": "Message actions",
+    "reply": "Reply",
+    "copy": "Copy",
+    "edit": "Edit",
+    "delete": "Delete",
+    "copied": "Copied",
+    "copyFailed": "Could not copy the text.",
+    "deletedOriginal": "This message was deleted",
+    "download": "Download {name}",
+    "openPhoto": "Open photo",
+    "photoUnavailable": "Photo unavailable",
+    "voiceMessage": "Voice message",
+    "photoFrom": "Photo from {name}",
+    "replyTo": "Reply to {name}",
+    "fromYou": "you"
+  },
+  "group": {
+    "newTitle": "New group",
+    "name": "Group name",
+    "description": "Description",
+    "members": "Members",
+    "chooseMembers": "Choose at least one person.",
+    "nameRequired": "Enter a name for the group.",
+    "create": "Create group",
+    "creating": "Creating…",
+    "createFailed": "The group could not be created.",
+    "info": "Group info",
+    "owner": "Owner",
+    "admin": "Admin",
+    "member": "Member",
+    "rename": "Edit name and description",
+    "addMembers": "Add people",
+    "add": "Add",
+    "adding": "Adding…",
+    "noOneToAdd": "Everyone you know is already in this group.",
+    "makeAdmin": "Make admin",
+    "removeAdmin": "Remove admin",
+    "remove": "Remove",
+    "removeTitle": "Remove {name}?",
+    "removeText": "They will no longer see new messages in this group.",
+    "leave": "Leave group",
+    "leaveTitle": "Leave this group?",
+    "leaveText": "You will stop receiving its messages. Someone has to add you again if you want to come back.",
+    "leaving": "Leaving…",
+    "actionFailed": "That did not work. Please try again.",
+    "saveFailed": "The changes could not be saved.",
+    "left": "You left the group",
+    "removedFromChat": "You were removed from that chat"
+  },
+  "people": {
+    "search": "Search people",
+    "newChatTitle": "New chat",
+    "newChatNote": "To message someone new, add them to a group first.",
+    "noPeople": "You do not have anyone to message yet. Create a group and add people to it first.",
+    "noMatch": "Nobody matches “{query}”.",
+    "loading": "Loading people…",
+    "openFailed": "The chat could not be opened.",
+    "selected": "{count} selected"
   }
 }

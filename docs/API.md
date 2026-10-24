@@ -925,36 +925,38 @@ Send a message. **Limit:** 30 per minute.
 }
 ```
 
-**Response `201`** with the new message, or **`200`** with the original message when `client_id` was already used (a retry). `409` if the `client_id` belongs to a message in another chat.
+**Response `201`** with the new message, or **`200`** with the original message when `client_id` was already used (a retry). Like every single resource it is wrapped: `{ "data": Message }`. `409` if the `client_id` belongs to a message in another chat.
 
 ```json
 {
-  "id": "0195e2c4-000a-7a09-8109-5f3a9c011667",
-  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
-  "sender": {
-    "id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
-    "name": "Saw Eh Doh",
-    "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg",
-    "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp"
-  },
-  "sender_id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
-  "type": "text",
-  "content": "Yes, I will bring the documents.",
-  "reply_to_id": "0195e2c4-0008-7a07-8107-5f3a9c00d889",
-  "reply_to": {
-    "id": "0195e2c4-0008-7a07-8107-5f3a9c00d889",
-    "sender_id": "0195e2c4-0003-7a02-8102-5f3a9c003dde",
+  "data": {
+    "id": "0195e2c4-000a-7a09-8109-5f3a9c011667",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "sender": {
+      "id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
+      "name": "Saw Eh Doh",
+      "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg",
+      "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp"
+    },
+    "sender_id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
     "type": "text",
-    "content": "Hello Eh Doh, are you coming on Saturday?",
-    "is_deleted": false
-  },
-  "client_id": "0195e2c4-0009-7a08-8108-5f3a9c00f778",
-  "is_edited": false,
-  "edited_at": null,
-  "metadata": {},
-  "encrypted": false,
-  "attachment": null,
-  "created_at": "2026-03-14T09:02:41.733103Z"
+    "content": "Yes, I will bring the documents.",
+    "reply_to_id": "0195e2c4-0008-7a07-8107-5f3a9c00d889",
+    "reply_to": {
+      "id": "0195e2c4-0008-7a07-8107-5f3a9c00d889",
+      "sender_id": "0195e2c4-0003-7a02-8102-5f3a9c003dde",
+      "type": "text",
+      "content": "Hello Eh Doh, are you coming on Saturday?",
+      "is_deleted": false
+    },
+    "client_id": "0195e2c4-0009-7a08-8108-5f3a9c00f778",
+    "is_edited": false,
+    "edited_at": null,
+    "metadata": {},
+    "encrypted": false,
+    "attachment": null,
+    "created_at": "2026-03-14T09:02:41.733103Z"
+  }
 }
 ```
 

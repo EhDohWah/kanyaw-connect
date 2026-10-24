@@ -4,8 +4,9 @@ The web app for Kanyaw Connect: private chat, community feed and video meetings 
 single-page app (Vue 3) that talks to the Laravel API in the parent folder. Build progress is tracked in
 [`PROGRESS.md`](PROGRESS.md); the API it follows is [`../docs/API.md`](../docs/API.md).
 
-> **Status:** Phase 1 of 5 (foundation): sign in and register, the responsive shell, profile with photo, presence.
-> Chats, the feed and meetings are placeholders until their phases.
+> **Status:** Phase 2 of 5 (messaging) is built: sign in and register, the responsive shell, profile with photo, presence,
+> and private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread counts,
+> chat drawer). The feed and meetings are placeholders until their phases.
 
 ## Run it
 
@@ -45,8 +46,8 @@ All are read at build time, and are public (they end up in the browser): never p
 | Variable | Meaning |
 |---|---|
 | `VITE_API_BASE_URL` | The API, including `/api/v1`, no trailing slash |
-| `VITE_REVERB_APP_KEY` | Reverb app key (public; it only identifies the application). Used from Phase 2 |
-| `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Where the WebSocket server is, `http` or `https`. Used from Phase 2 |
+| `VITE_REVERB_APP_KEY` | Reverb app key (public; it only identifies the application). Needed for real-time chat |
+| `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Where the WebSocket server is, `http` or `https` |
 | `VITE_FEED_SOURCE` | `mock` (sample posts) or `api` (when the backend has a feed). Used from Phase 3 |
 
 The LiveKit address is not configured here: the API sends it when a meeting is joined.
@@ -56,13 +57,15 @@ The LiveKit address is not configured here: the API sends it when a meeting is j
 ```
 src/
   api/          one typed module per resource; http.ts is the only place that uses axios
-  components/   layout/ (shell, navigation), common/ (buttons, inputs, dialog, avatar, states)
-  composables/  logic shared between components (heartbeat, online status)
+  components/   layout/ (shell, navigation, chat drawer), chat/ (list, conversation, composer, dialogs),
+                common/ (buttons, inputs, dialog, avatar, states)
+  composables/  logic shared between components (heartbeat, messaging session, open conversation, people)
   i18n/         en.json (complete), my.json and ksw.json (same keys, to be translated)
+  realtime/     the WebSocket: Echo, the channel manager (what is joined, and when) and what each event does
   router/       routes and sign-in guards
-  stores/       Pinia: auth, ui
+  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime
   types/        types that mirror the objects in docs/API.md
-  utils/        small helpers (device name, initials, image shrinking, redirects, focus trap)
+  utils/        small helpers: merging messages, dates, links in text, message rules, image shrinking, redirects, focus trap
   views/        one file per page
   style.css     the design tokens (the only place colours are defined)
 ```
@@ -102,12 +105,12 @@ These parts of the product have no backend yet, or are not built yet:
 | Feature | State |
 |---|---|
 | Feed, posts, likes, comments, shares | The backend has no endpoints. Built with sample data in Phase 3 |
-| Chats and messages | Backend ready; screens arrive in Phase 2 |
+| Chats and messages | Connected (Phase 2). Not built: recording voice messages, "seen by", encrypted chats (read-only notice) |
 | Meetings and video | Backend ready; screens arrive in Phase 4 |
 | Push notifications | Backend ready; arrive in Phase 5 |
 | "Forgot password", changing the password, email verification | The backend has no endpoints |
 | Finding people you share no chat with | The backend has no user search |
-| Group photos, muting, archiving, pinning chats | The backend has no endpoints to change them |
+| Group photos, muting, archiving, pinning chats | The backend has no endpoints to change them. The app shows the state (pinned first, muted grey) but has no controls |
 | Editing or cancelling a scheduled meeting | The backend can only end it |
 | End-to-end encrypted chats | The backend is ready; the client-side cryptography is a separate project |
 
