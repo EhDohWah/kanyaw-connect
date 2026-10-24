@@ -2,16 +2,32 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { echoes, fakeEchoFactory, lastEcho } from '@/__tests__/fakeEcho'
 import { http, setSocketIdResolver } from '@/api/http'
-import { RealtimeManager, TYPING_WHISPER_INTERVAL_MS, type ChatChannelHandlers, type RealtimeHooks, type UserChannelHandlers } from '@/realtime/manager'
+import {
+  RealtimeManager,
+  TYPING_WHISPER_INTERVAL_MS,
+  type ChatChannelHandlers,
+  type MessagingHandlers,
+  type RealtimeHooks,
+  type RoomChannelHandlers,
+  type UserChannelHandlers,
+} from '@/realtime/manager'
 
-const userHandlers = (): UserChannelHandlers => ({
+const messagingHandlers = (): MessagingHandlers => ({
   messageSent: vi.fn(),
   messageRead: vi.fn(),
   chatUpdated: vi.fn(),
   chatMemberAdded: vi.fn(),
   chatMemberRemoved: vi.fn(),
 })
-const chatHandlers = (): ChatChannelHandlers => ({ ...userHandlers(), messageUpdated: vi.fn(), messageDeleted: vi.fn(), typing: vi.fn() })
+const userHandlers = (): UserChannelHandlers => ({ ...messagingHandlers(), roomAdmitted: vi.fn(), roomDenied: vi.fn(), roomJoinRequested: vi.fn() })
+const chatHandlers = (): ChatChannelHandlers => ({ ...messagingHandlers(), messageUpdated: vi.fn(), messageDeleted: vi.fn(), typing: vi.fn() })
+const roomHandlers = (): RoomChannelHandlers => ({
+  participantJoined: vi.fn(),
+  participantLeft: vi.fn(),
+  roleChanged: vi.fn(),
+  joinRequested: vi.fn(),
+  ended: vi.fn(),
+})
 const hooks = (): RealtimeHooks => ({ status: vi.fn(), connected: vi.fn() })
 
 function make() {
@@ -261,5 +277,77 @@ describe('typing whispers', () => {
     manager.sendTyping('other', 'u1', true, 10_000)
 
     expect(whispers()).toHaveLength(0)
+  })
+})
+
+describe('video rooms', () => {
+  it('hears "let in", "turned away" and "someone is waiting" on the user channel', () => {
+    const { manager, user, h } = make()
+    manager.connect('t', 'u1', user, h)
+    const channel = lastEcho().channels.get('private-user.u1')!
+    const room = { id: 'r1', name: 'Committee', type: 'scheduled', status: 'waiting', host_id: 'h', chat_id: null, is_locked: false }
+
+    channel.emit('.room.admitted', { room })
+    channel.emit('.room.denied', { room })
+    channel.emit('.room.join_requested', { room_id: 'r1', user: { id: 'p', name: 'Paw' } })
+
+    expect(user.roomAdmitted).toHaveBeenCalledWith({ room })
+    expect(user.roomDenied).toHaveBeenCalledWith({ room })
+    expect(user.roomJoinRequested).toHaveBeenCalledWith({ room_id: 'r1', user: { id: 'p', name: 'Paw' } })
+  })
+
+  it('joins the room\'s presence channel during a call and passes on its five events', () => {
+    const { manager, user, h } = make()
+    manager.connect('t', 'u1', user, h)
+    const handlers = roomHandlers()
+
+    manager.watchRoom('r1', handlers)
+    const channel = lastEcho().channels.get('presence-room.r1')!
+    channel.emit('.room.participant_joined', { room_id: 'r1', user: { id: 'p' }, role: 'participant' })
+    channel.emit('.room.participant_left', { room_id: 'r1', user: { id: 'p' }, role: 'participant' })
+    channel.emit('.room.role_changed', { room_id: 'r1', user_id: 'p', role: 'co_host', host_id: 'u1' })
+    channel.emit('.room.join_requested', { room_id: 'r1', user: { id: 'q' } })
+    channel.emit('.room.ended', { room_id: 'r1', ended_at: 'x' })
+
+    expect(handlers.participantJoined).toHaveBeenCalledTimes(1)
+    expect(handlers.participantLeft).toHaveBeenCalledTimes(1)
+    expect(handlers.roleChanged).toHaveBeenCalledWith({ room_id: 'r1', user_id: 'p', role: 'co_host', host_id: 'u1' })
+    expect(handlers.joinRequested).toHaveBeenCalledTimes(1)
+    expect(handlers.ended).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the room channel when the call ends, and only then', () => {
+    const { manager, user, h } = make()
+    manager.connect('t', 'u1', user, h)
+    const stop = manager.watchRoom('r1', roomHandlers())
+
+    stop()
+    stop()
+
+    expect(lastEcho().left).toEqual(['room.r1'])
+  })
+
+  it('a room asked for before the connection exists is joined when it connects, and again after a reconnect', () => {
+    const { manager, user, h } = make()
+    manager.watchRoom('r1', roomHandlers())
+
+    manager.connect('t', 'u1', user, h)
+    expect(lastEcho().channels.has('presence-room.r1')).toBe(true)
+
+    manager.connect('t2', 'u1', user, h)
+    expect(lastEcho().channels.has('presence-room.r1')).toBe(true)
+  })
+
+  it('a second room replaces the first; signing out forgets it', () => {
+    const { manager, user, h } = make()
+    manager.connect('t', 'u1', user, h)
+    manager.watchRoom('r1', roomHandlers())
+
+    manager.watchRoom('r2', roomHandlers())
+    expect(lastEcho().left).toEqual(['room.r1'])
+
+    manager.disconnect()
+    manager.connect('t', 'u1', user, h)
+    expect(lastEcho().channels.has('presence-room.r2')).toBe(false)
   })
 })

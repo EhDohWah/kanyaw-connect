@@ -12,6 +12,19 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            // The video library is large and changes rarely: in its own file, so an app update does not make phones
+            // download it again. It is loaded only when a meeting is opened.
+            { name: 'livekit', test: /node_modules[\\/](livekit-client|@livekit)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   server: {
     // The backend allows exactly this origin (CORS). If the port were taken, Vite would silently pick
     // another one and every request would be blocked, so fail loudly instead.

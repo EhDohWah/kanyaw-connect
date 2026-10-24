@@ -33,7 +33,13 @@
   /* Video call screen */
   --color-call-bg: #18181b;
   --color-call-surface: #27272a;
+  /* Buttons and dividers on the call screen (zinc-700). */
+  --color-call-raised: #3f3f46;
   --color-on-call: #fafafa;
+  /* Secondary text on the call screen (zinc-400): about 6:1 on call-surface. */
+  --color-on-call-muted: #a1a1aa;
+  /* Errors on the call screen: the usual danger red is too dark to read there (about 7:1 on call-bg). */
+  --color-on-call-danger: #f28b82;
 
   /* Initials avatars: eight calm hues, each readable with white text (no purple) */
   --color-avatar-1: #1d4e89;

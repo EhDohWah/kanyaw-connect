@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dateLocale, dayKey, formatClock, formatDayLabel, formatFullTime, formatListTime, formatMeetingTime, formatRelativeTime, safeTimeZone } from '@/utils/dates'
+import { dateLocale, dayKey, formatClock, formatDayLabel, formatFullTime, formatListTime, formatMeetingTime, formatRelativeTime, fromZonedInput, safeTimeZone, toZonedInput } from '@/utils/dates'
 
 const labels = { today: 'Today', yesterday: 'Yesterday' }
 const now = Date.parse('2026-03-14T12:00:00Z') // a Saturday
@@ -121,5 +121,38 @@ describe('dateLocale', () => {
 
   it('uses English for one it does not know (S’gaw Karen), like the rest of the app, not the browser’s own language', () => {
     expect(dateLocale('ksw')).toBe('en')
+  })
+})
+
+describe('toZonedInput / fromZonedInput (the start time of a meeting, on the clock of the person\'s time zone)', () => {
+  it('reads a clock time in the profile\'s time zone, not the browser\'s', () => {
+    expect(fromZonedInput('2026-03-14T16:30', 'Asia/Bangkok')).toBe('2026-03-14T09:30:00.000Z')
+    expect(fromZonedInput('2026-03-14T16:30', 'Asia/Yangon')).toBe('2026-03-14T10:00:00.000Z') // +06:30
+    expect(fromZonedInput('2026-03-14T16:30', 'UTC')).toBe('2026-03-14T16:30:00.000Z')
+  })
+
+  it('shows a moment as that clock time, and the two agree', () => {
+    expect(toZonedInput('2026-03-14T09:30:00Z', 'Asia/Bangkok')).toBe('2026-03-14T16:30')
+    expect(toZonedInput('2026-12-31T23:59:00Z', 'Asia/Yangon')).toBe('2027-01-01T06:29')
+    for (const zone of ['Asia/Bangkok', 'America/New_York', 'Europe/London', 'Australia/Sydney']) {
+      expect(toZonedInput(fromZonedInput('2026-07-04T08:15', zone)!, zone)).toBe('2026-07-04T08:15')
+    }
+  })
+
+  it('gets the right hour on either side of a daylight-saving change', () => {
+    expect(fromZonedInput('2026-03-08T01:30', 'America/New_York')).toBe('2026-03-08T06:30:00.000Z') // still EST
+    expect(fromZonedInput('2026-03-08T03:30', 'America/New_York')).toBe('2026-03-08T07:30:00.000Z') // EDT
+    expect(fromZonedInput('2026-03-29T12:00', 'Europe/London')).toBe('2026-03-29T11:00:00.000Z') // BST
+  })
+
+  it('takes a clock time that a daylight-saving change skipped as the hour after, in every zone', () => {
+    expect(toZonedInput(fromZonedInput('2026-03-08T02:30', 'America/New_York')!, 'America/New_York')).toBe('2026-03-08T03:30')
+    expect(toZonedInput(fromZonedInput('2026-03-29T01:30', 'Europe/London')!, 'Europe/London')).toBe('2026-03-29T02:30')
+  })
+
+  it('refuses what is not a date and time, and survives an unknown zone (UTC)', () => {
+    expect(fromZonedInput('', 'UTC')).toBeNull()
+    expect(fromZonedInput('2026-03-14', 'UTC')).toBeNull()
+    expect(fromZonedInput('2026-03-14T16:30', 'Nowhere/Atlantis')).toBe('2026-03-14T16:30:00.000Z')
   })
 })

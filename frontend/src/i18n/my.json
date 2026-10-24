@@ -378,7 +378,10 @@
       "joinNamed": "Join {name}",
       "hostedBy": "Hosted by {name}",
       "hostedByYou": "You are the host",
-      "live": "In progress"
+      "live": "In progress",
+      "inCall": "{count} in the call",
+      "notStarted": "Not started yet",
+      "locked": "Locked"
     },
     "groups": {
       "title": "People from your groups",
@@ -389,6 +392,208 @@
       "messageNamed": "Message {name}",
       "showMore": "Show {count} more",
       "showLess": "Show fewer"
+    }
+  },
+  "meetings": {
+    "title": "Meetings",
+    "new": "New meeting",
+    "tabsLabel": "Which meetings",
+    "tabs": {
+      "upcoming": "Upcoming",
+      "hosting": "Hosting",
+      "invited": "Invited"
+    },
+    "empty": {
+      "upcoming": "No meetings coming up.",
+      "hosting": "You are not hosting any meetings.",
+      "invited": "No invitations right now."
+    },
+    "emptyHint": {
+      "upcoming": "Scheduled meetings you host or are invited to show here.",
+      "hosting": "Start one now, or schedule one for later.",
+      "invited": "Meetings started in your group chats show here."
+    },
+    "failed": "The meetings could not be loaded.",
+    "showMore": "Show more meetings",
+    "loadingMore": "Loading…",
+    "form": {
+      "title": "New meeting",
+      "name": "Name",
+      "nameRequired": "Enter a name for the meeting.",
+      "nameTooLong": "A name can have at most {max} characters.",
+      "description": "Description",
+      "descriptionTooLong": "A description can have at most {max} characters.",
+      "startsAt": "Start time",
+      "startsAtHint": "Leave it empty to start now. Times are in your time zone ({zone}).",
+      "startsInPast": "Choose a time in the future.",
+      "duration": "How long",
+      "durationNone": "Not set",
+      "minutes": "{count} minutes",
+      "hours": "{count} hour | {count} hours",
+      "password": "Password",
+      "passwordHint": "People need it to join. 4 to 64 characters.",
+      "passwordLength": "Use 4 to 64 characters.",
+      "waitingRoom": "Waiting room",
+      "waitingRoomHint": "You let each person in yourself.",
+      "maxParticipants": "Most people at once",
+      "maxHint": "From 2 to 100.",
+      "maxRange": "Choose a number from 2 to 100.",
+      "chat": "Invite a group",
+      "chatNone": "No group",
+      "chatHint": "Everyone in the group is invited and told in the chat.",
+      "startNow": "Start meeting",
+      "schedule": "Schedule meeting",
+      "creating": "Creating…",
+      "failed": "The meeting could not be created.",
+      "scheduled": "Meeting scheduled for {when}."
+    }
+  },
+  "call": {
+    "loadFailed": "The meeting could not be loaded.",
+    "prejoin": {
+      "hostedBy": "Hosted by {name}",
+      "hostedByYou": "You are the host",
+      "startsAt": "Starts {when}",
+      "live": "In progress · {count} in the call",
+      "preview": "Your camera preview",
+      "cameraOff": "Your camera is off",
+      "camera": "Camera",
+      "microphone": "Microphone",
+      "defaultDevice": "Default",
+      "password": "Meeting password",
+      "waitingRoomNote": "The host lets each person in.",
+      "lockedNote": "The host has locked this meeting: only people already let in can join.",
+      "join": "Join meeting",
+      "joining": "Joining…",
+      "connecting": "Connecting…",
+      "rejoining": "Joining the meeting again…",
+      "back": "Back to meetings"
+    },
+    "problem": {
+      "passwordRequired": "This meeting has a password. Enter it to join.",
+      "locked": "The host has locked this meeting. Only people already let in can join.",
+      "full": "This meeting is full. Try again when someone leaves.",
+      "unavailable": "The video service can't be reached right now. Try again in a moment.",
+      "connectFailed": "Couldn't connect to the meeting. Check your connection and try again."
+    },
+    "media": {
+      "camera": {
+        "blocked": "The browser is not allowing the camera. Allow it in the browser's settings, or join without it.",
+        "missing": "No camera was found.",
+        "busy": "The camera is being used by another app.",
+        "failed": "The camera could not be started."
+      },
+      "microphone": {
+        "blocked": "The browser is not allowing the microphone. Allow it in the browser's settings, or join without it.",
+        "missing": "No microphone was found.",
+        "busy": "The microphone is being used by another app.",
+        "failed": "The microphone could not be started."
+      },
+      "screen": {
+        "blocked": "Screen sharing was not allowed.",
+        "missing": "There is nothing to share.",
+        "busy": "The screen could not be shared right now.",
+        "failed": "The screen could not be shared."
+      }
+    },
+    "waiting": {
+      "title": "Waiting for the host to let you in",
+      "text": "Keep this page open. You will join as soon as the host lets you in.",
+      "leave": "Stop waiting",
+      "toast": "{name} is waiting to be let in to your meeting.",
+      "section": "Waiting to join",
+      "admit": "Admit",
+      "deny": "Deny",
+      "admitNamed": "Admit {name}",
+      "denyNamed": "Deny {name}"
+    },
+    "over": {
+      "ended": "The meeting has ended",
+      "left": "You left the meeting",
+      "removed": "You were removed from the meeting",
+      "denied": "The host did not let you in",
+      "forbidden": "You are not invited to this meeting",
+      "notFound": "This meeting does not exist",
+      "elsewhere": "You joined this meeting somewhere else",
+      "elsewhereText": "You are in this meeting in another tab or on another device.",
+      "rejoin": "Rejoin",
+      "back": "Back to meetings"
+    },
+    "toolbar": {
+      "label": "Meeting controls",
+      "microphone": "Microphone",
+      "camera": "Camera",
+      "screen": "Share screen",
+      "chat": "Chat",
+      "chatUnread": "Chat, {count} new",
+      "participants": "Participants",
+      "more": "More options",
+      "leave": "Leave",
+      "leaveMeeting": "Leave meeting",
+      "endForAll": "End meeting for everyone",
+      "endTitle": "End the meeting for everyone?",
+      "endText": "Everyone will be disconnected.",
+      "ending": "Ending…",
+      "endFailed": "The meeting could not be ended. Please try again.",
+      "dataSaver": "Data saver: turn off incoming video",
+      "dataSaverHint": "Saves mobile data. Screen shares still show.",
+      "settingsTitle": "Settings"
+    },
+    "stage": {
+      "label": "Video",
+      "reconnecting": "Reconnecting…",
+      "audioBlocked": "The browser paused the sound.",
+      "startAudio": "Turn on sound",
+      "page": "Page {page} of {count}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "you": "{name} (you)",
+      "micOff": "Microphone off",
+      "speaking": "Speaking",
+      "screenOf": "{name}'s screen",
+      "yourScreen": "Your screen",
+      "weakConnection": "Weak connection"
+    },
+    "participants": {
+      "title": "Participants",
+      "inCall": "In the call ({count})",
+      "host": "Host",
+      "coHost": "Co-host",
+      "you": "You",
+      "cameraOff": "Camera off",
+      "actions": "Actions for {name}",
+      "muteMicrophone": "Mute microphone",
+      "muteCamera": "Turn off camera",
+      "makeCoHost": "Make co-host",
+      "remove": "Remove from meeting",
+      "removeTitle": "Remove {name}?",
+      "removeText": "They will be disconnected and cannot come back unless you let them in.",
+      "muted": "{name}'s microphone is muted.",
+      "cameraStopped": "{name}'s camera is off.",
+      "alreadyMuted": "That was already off.",
+      "nowCoHost": "{name} is now a co-host.",
+      "removed": "{name} was removed.",
+      "admitted": "{name} was let in.",
+      "failed": "That did not work. Please try again.",
+      "lock": "Lock meeting",
+      "lockHint": "No one new can join.",
+      "unmuteNote": "People unmute themselves."
+    },
+    "chat": {
+      "title": "Chat",
+      "note": "Messages disappear when the meeting ends.",
+      "empty": "No messages yet.",
+      "label": "Message everyone",
+      "send": "Send",
+      "failed": "Your message could not be sent."
+    },
+    "panel": {
+      "label": "Meeting panel",
+      "close": "Close panel"
+    },
+    "roles": {
+      "nowHost": "You are now the host.",
+      "nowCoHost": "You are now a co-host."
     }
   }
 }

@@ -33,6 +33,8 @@ export const useUiStore = defineStore('ui', () => {
   const createMenuOpen = ref(false)
   const newChatOpen = ref(false)
   const newGroupOpen = ref(false)
+  /** The full-screen call is showing: the shell around it (navigation, sidebar, chat drawer) steps aside. */
+  const callOpen = ref(false)
   /** The chat drawer on wide screens: open or collapsed to a tab, and which chat it shows (none = the list). */
   const drawer = ref<DrawerState>(readDrawer())
   let nextId = 1
@@ -56,6 +58,7 @@ export const useUiStore = defineStore('ui', () => {
     createMenuOpen.value = false
     newChatOpen.value = false
     newGroupOpen.value = false
+    callOpen.value = false
   }
 
   function dismissToast(id: number): void {
@@ -74,6 +77,7 @@ export const useUiStore = defineStore('ui', () => {
     createMenuOpen,
     newChatOpen,
     newGroupOpen,
+    callOpen,
     drawer,
     openDrawer,
     collapseDrawer,

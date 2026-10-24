@@ -1,15 +1,17 @@
-import type { ChatChannelHandlers, UserChannelHandlers } from '@/realtime/manager'
+import { i18n } from '@/i18n'
+import type { ChatChannelHandlers, MessagingHandlers, UserChannelHandlers } from '@/realtime/manager'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
 import { useMessagesStore } from '@/stores/messages'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
+import { useUiStore } from '@/stores/ui'
 
 /**
  * What each real-time event does to the app's state. Events are hints that can arrive twice or out of order:
  * every one of these is safe to run again (messages are matched by id, counts by comparing with what is shown).
  */
-function sharedHandlers(): Omit<UserChannelHandlers, never> {
+function sharedHandlers(): MessagingHandlers {
   const auth = useAuthStore()
   const chats = useChatsStore()
   const messages = useMessagesStore()
@@ -53,7 +55,19 @@ function sharedHandlers(): Omit<UserChannelHandlers, never> {
 }
 
 export function userChannelHandlers(): UserChannelHandlers {
-  return sharedHandlers()
+  const rooms = useRoomsStore()
+  const ui = useUiStore()
+
+  return {
+    ...sharedHandlers(),
+    roomAdmitted: ({ room }) => rooms.noteDecision(room.id, 'admitted'),
+    roomDenied: ({ room }) => rooms.noteDecision(room.id, 'denied'),
+    roomJoinRequested: (event) => {
+      rooms.noteJoinRequest(event)
+      // In the meeting the Waiting list shows it; anywhere else, say so (the host may be reading their chats).
+      if (rooms.activeCallId !== event.room_id) ui.toast(i18n.global.t('call.waiting.toast', { name: event.user.name }))
+    },
+  }
 }
 
 export function chatChannelHandlers(chatId: string): ChatChannelHandlers {

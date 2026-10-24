@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Lock } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -27,9 +28,17 @@ const when = computed(() =>
       <p v-if="when" class="truncate text-sm text-text-muted">
         <time :datetime="room.scheduled_at ?? undefined">{{ when }}</time>
       </p>
+      <p v-else-if="room.status === 'waiting'" class="truncate text-sm text-text-muted">{{ t('activity.meetings.notStarted') }}</p>
       <p class="truncate text-sm text-text-muted">
         {{ hostedByMe ? t('activity.meetings.hostedByYou') : t('activity.meetings.hostedBy', { name: room.host.name }) }}
-        <span v-if="room.status === 'active'" class="ml-1 rounded-lg bg-primary-soft px-1.5 py-0.5 text-xs font-medium text-primary">{{ t('activity.meetings.live') }}</span>
+      </p>
+      <p v-if="room.status === 'active' || room.is_locked" class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+        <span v-if="room.status === 'active'" class="rounded-lg bg-primary-soft px-1.5 py-0.5 font-medium text-primary">
+          {{ t('activity.meetings.live') }}<template v-if="room.present_count > 0"> · {{ t('activity.meetings.inCall', { count: room.present_count }) }}</template>
+        </span>
+        <span v-if="room.is_locked" class="inline-flex items-center gap-1 text-text-muted">
+          <Lock class="size-3.5" aria-hidden="true" />{{ t('activity.meetings.locked') }}
+        </span>
       </p>
     </div>
     <RouterLink

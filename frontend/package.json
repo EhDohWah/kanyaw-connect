@@ -16,6 +16,7 @@
   "dependencies": {
     "axios": "^1.20.0",
     "laravel-echo": "^2.6.1",
+    "livekit-client": "^2.23.0",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^4.0.3",
     "pusher-js": "^8.6.0",

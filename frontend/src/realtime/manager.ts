@@ -9,9 +9,10 @@ import type {
   MessageReadEvent,
   TypingWhisper,
 } from '@/types/chat'
+import type { RoomDecisionEvent, RoomEndedEvent, RoomJoinRequestedEvent, RoomPresenceEvent, RoomRoleChangedEvent } from '@/types/room'
 
-/** Events on `private-user.{me}`: always on, for the whole session. */
-export interface UserChannelHandlers {
+/** Message and chat events: they arrive on the user channel and on the channel of an open chat. */
+export interface MessagingHandlers {
   messageSent(event: MessageEvent): void
   messageRead(event: MessageReadEvent): void
   chatUpdated(event: ChatUpdatedEvent): void
@@ -19,11 +20,30 @@ export interface UserChannelHandlers {
   chatMemberRemoved(event: ChatMemberRemovedEvent): void
 }
 
+/** Events on `private-user.{me}`: always on, for the whole session. */
+export interface UserChannelHandlers extends MessagingHandlers {
+  /** The host let you in: join again for your token. */
+  roomAdmitted(event: RoomDecisionEvent): void
+  /** The host turned you away, or removed you from the call. */
+  roomDenied(event: RoomDecisionEvent): void
+  /** For hosts and co-hosts: someone is waiting to be let in, even when the meeting is not open here. */
+  roomJoinRequested(event: RoomJoinRequestedEvent): void
+}
+
 /** Events on `private-chat.{id}` and `presence-chat.{id}`: only while that chat is open. */
-export interface ChatChannelHandlers extends UserChannelHandlers {
+export interface ChatChannelHandlers extends MessagingHandlers {
   messageUpdated(event: MessageEvent): void
   messageDeleted(event: MessageDeletedEvent): void
   typing(event: TypingWhisper): void
+}
+
+/** Events on `presence-room.{id}`: only during a call (the host and admitted people may join it). */
+export interface RoomChannelHandlers {
+  participantJoined(event: RoomPresenceEvent): void
+  participantLeft(event: RoomPresenceEvent): void
+  roleChanged(event: RoomRoleChangedEvent): void
+  joinRequested(event: RoomJoinRequestedEvent): void
+  ended(event: RoomEndedEvent): void
 }
 
 export interface RealtimeHooks {
@@ -35,6 +55,12 @@ export interface RealtimeHooks {
 
 /** How often a typing whisper may go out (docs/API.md, 4.2). */
 export const TYPING_WHISPER_INTERVAL_MS = 2000
+
+interface RoomWatch {
+  roomId: string
+  handlers: RoomChannelHandlers
+  subscribed: boolean
+}
 
 interface Watch {
   handlers: ChatChannelHandlers
@@ -53,6 +79,8 @@ export class RealtimeManager {
   private lastStatus: ConnectionStatus | null = null
   private readonly watches = new Map<string, Watch>()
   private readonly lastWhisper = new Map<string, number>()
+  /** The video room of the call on screen (one at a time). */
+  private roomWatch: RoomWatch | null = null
 
   constructor(private readonly createEcho: (token: string) => EchoLike) {}
 
@@ -82,8 +110,12 @@ export class RealtimeManager {
       .listen<ChatUpdatedEvent>('.chat.updated', (event) => user.chatUpdated(event))
       .listen<ChatMemberAddedEvent>('.chat.member_added', (event) => user.chatMemberAdded(event))
       .listen<ChatMemberRemovedEvent>('.chat.member_removed', (event) => user.chatMemberRemoved(event))
+      .listen<RoomDecisionEvent>('.room.admitted', (event) => user.roomAdmitted(event))
+      .listen<RoomDecisionEvent>('.room.denied', (event) => user.roomDenied(event))
+      .listen<RoomJoinRequestedEvent>('.room.join_requested', (event) => user.roomJoinRequested(event))
 
     for (const [chatId, watch] of this.watches) this.subscribe(chatId, watch)
+    if (this.roomWatch) this.subscribeRoom(this.roomWatch)
   }
 
   /** Closes the connection and forgets every watch (signing out). */
@@ -91,6 +123,22 @@ export class RealtimeManager {
     this.closeConnection()
     this.watches.clear()
     this.lastWhisper.clear()
+    this.roomWatch = null
+  }
+
+  /**
+   * Listens to a video room during a call. Returns the function that stops. A second room replaces the first (there is
+   * one call at a time). Kept across a reconnect, like an open chat.
+   */
+  watchRoom(roomId: string, handlers: RoomChannelHandlers): () => void {
+    if (this.roomWatch) this.unwatchRoom(this.roomWatch)
+    const watch: RoomWatch = { roomId, handlers, subscribed: false }
+    this.roomWatch = watch
+    this.subscribeRoom(watch)
+
+    return () => {
+      if (this.roomWatch === watch) this.unwatchRoom(watch)
+    }
   }
 
   /**
@@ -161,6 +209,25 @@ export class RealtimeManager {
     watch.subscribed = true
   }
 
+  private subscribeRoom(watch: RoomWatch): void {
+    if (!this.echo || watch.subscribed) return
+    const { handlers } = watch
+
+    this.echo
+      .join(`room.${watch.roomId}`)
+      .listen<RoomPresenceEvent>('.room.participant_joined', (event) => handlers.participantJoined(event))
+      .listen<RoomPresenceEvent>('.room.participant_left', (event) => handlers.participantLeft(event))
+      .listen<RoomRoleChangedEvent>('.room.role_changed', (event) => handlers.roleChanged(event))
+      .listen<RoomJoinRequestedEvent>('.room.join_requested', (event) => handlers.joinRequested(event))
+      .listen<RoomEndedEvent>('.room.ended', (event) => handlers.ended(event))
+    watch.subscribed = true
+  }
+
+  private unwatchRoom(watch: RoomWatch): void {
+    if (watch.subscribed) this.echo?.leave(`room.${watch.roomId}`)
+    if (this.roomWatch === watch) this.roomWatch = null
+  }
+
   private unwatchChat(chatId: string): void {
     const watch = this.watches.get(chatId)
     if (!watch) return
@@ -184,6 +251,7 @@ export class RealtimeManager {
       this.echo = null
     }
     for (const watch of this.watches.values()) watch.subscribed = false
+    if (this.roomWatch) this.roomWatch.subscribed = false
     setSocketIdResolver(() => undefined)
   }
 }

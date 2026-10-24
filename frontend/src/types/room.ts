@@ -58,3 +58,54 @@ export interface NewRoom {
   waiting_room_enabled?: boolean
   max_participants?: number
 }
+
+/** `POST /rooms/{room}/join` succeeded: connect to LiveKit with these, or wait for the host. */
+export type JoinResult =
+  | { status: 'admitted'; token: string; livekit_url: string; room: Room }
+  | { status: 'waiting' }
+
+/** What `POST /rooms/{room}/participants/{user}/mute` mutes. */
+export type MuteKind = 'audio' | 'video'
+
+/** The short room summary in `room.admitted` and `room.denied` (docs/API.md, 4.3). */
+export interface RoomSummary {
+  id: string
+  name: string
+  type: RoomType
+  status: RoomStatus
+  host_id: string
+  chat_id: string | null
+  is_locked: boolean
+}
+
+/** `room.admitted` / `room.denied` on your own user channel. */
+export interface RoomDecisionEvent {
+  room: RoomSummary
+}
+
+/** `room.join_requested`: someone is waiting to be let in (to hosts and co-hosts). */
+export interface RoomJoinRequestedEvent {
+  room_id: string
+  user: PublicUser
+}
+
+/** `room.participant_joined` / `room.participant_left` on the room's presence channel. */
+export interface RoomPresenceEvent {
+  room_id: string
+  user: PublicUser
+  role: RoomRole
+}
+
+/** `room.role_changed`: `role` is the new role of `user_id`; `host_id` is the host now. */
+export interface RoomRoleChangedEvent {
+  room_id: string
+  user_id: string
+  role: RoomRole
+  host_id: string
+}
+
+/** `room.ended`. */
+export interface RoomEndedEvent {
+  room_id: string
+  ended_at: string
+}

@@ -4,11 +4,12 @@ The web app for Kanyaw Connect: private chat, community feed and video meetings 
 single-page app (Vue 3) that talks to the Laravel API in the parent folder. Build progress is tracked in
 [`PROGRESS.md`](PROGRESS.md); the API it follows is [`../docs/API.md`](../docs/API.md).
 
-> **Status:** Phase 3 of 5 (feed and sidebar) is built: sign in and register, the responsive shell, profile with photo,
-> presence, private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread
-> counts, chat drawer), a feed of sample posts (likes, comments, share, new posts), the Create dialog (post, start a
-> meeting) and the "People & activity" sidebar (who is online, upcoming meetings, people from your groups). Meeting rooms
-> and video are placeholders until Phase 4.
+> **Status:** Phase 4 of 5 (video) is built: sign in and register, the responsive shell, profile with photo, presence,
+> private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread counts, chat
+> drawer), a feed of sample posts (likes, comments, share, new posts), the Create dialog, the "People & activity" sidebar,
+> and video meetings: the Meetings page (upcoming, hosting, invited; new meetings with a time, password, waiting room and
+> group), the pre-join screen, the call (adaptive grid, screen sharing, chat, participants and host controls). Push
+> notifications and the final polish come in Phase 5.
 
 ## Run it
 
@@ -61,16 +62,21 @@ src/
   api/          one typed module per resource; http.ts is the only place that uses axios
   components/   layout/ (shell, navigation, chat drawer, Create dialog, the "People & activity" sidebar), chat/ (list,
                 conversation, composer, dialogs), feed/ (post card, comments, picture drop zone, post form), rooms/ (meeting
-                row), common/ (buttons, inputs, dialog, avatar, states)
-  composables/  logic shared between components (heartbeat, messaging session, open conversation, people, infinite scroll)
+                rows and lists, the New meeting form), call/ (pre-join, the call screen: video grid, tiles, toolbar,
+                participants and chat panel, end screens), common/ (buttons, inputs, select, switch, dialog, avatar, states)
+  composables/  logic shared between components (heartbeat, messaging session, open conversation, people, infinite scroll,
+                the camera and microphone preview)
   i18n/         en.json (complete), my.json and ksw.json (same keys, to be translated)
-  realtime/     the WebSocket: Echo, the channel manager (what is joined, and when) and what each event does
-  mocks/        the sample feed: people, posts, comments, and the service that serves them from the browser
+  realtime/     the WebSocket: Echo, the channel manager (what is joined, and when) and what each event does; LiveKit:
+                callSession.ts (the one place that talks to livekit-client) and localMedia.ts (camera and microphone)
+  mocks/        the sample feed (people, posts, comments, and the service that serves them from the browser), and the
+                development-only call layout preview
   router/       routes and sign-in guards
   services/     what the feed needs from a server (an interface); which implementation is used is set by VITE_FEED_SOURCE
-  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime, feed, rooms
+  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime, feed, rooms, call
   types/        types that mirror the objects in docs/API.md
-  utils/        small helpers: merging messages, dates, links in text, message rules, image shrinking, redirects, focus trap
+  utils/        small helpers: merging messages, dates and time zones, links in text, message rules, image shrinking,
+                redirects, focus trap, the call grid, what a refused join means
   views/        one file per page
   style.css     the design tokens (the only place colours are defined)
 ```
@@ -82,7 +88,8 @@ and replace only the network (`src/__tests__/helpers.ts`).
 
 Colours are tokens in `src/style.css` (`@theme`). The default Tailwind palette is switched off on purpose, so only these
 can be used: `bg`, `surface`, `border`, `text`, `text-muted`, `primary`, `primary-hover`, `primary-soft`, `danger`,
-`call-bg`, `call-surface`, plus a few helpers (`on-primary`, `danger-soft`, `success`, `on-call`, eight `avatar-*`).
+`call-bg`, `call-surface`, plus a few helpers (`on-primary`, `danger-soft`, `success`, eight `avatar-*`, and for the dark
+call screen `call-raised`, `on-call`, `on-call-muted`, `on-call-danger`).
 To change the look of the whole app, change a value there.
 
 ## Languages
@@ -103,6 +110,21 @@ the `Authorization` header, and never logged. When the server says the token is 
 login screen with the reason, and returns to the page they were on after signing in again. Signing out revokes this
 device's token on the server.
 
+## Video meetings
+
+Meetings use the API for who may join, and a LiveKit server for the video; the API sends the LiveKit address and a
+one-hour token when someone joins (`docker compose up` in the repository root starts LiveKit too). The video library is
+large (about 140 KB compressed), so it is loaded only when a meeting is opened, in a file of its own.
+
+- The browser lets a page use the camera and microphone only on `https://` or on `localhost`. To try a call from a phone
+  on your network, serve the app over https and set the backend's `LIVEKIT_NODE_IP` (see the backend README).
+- What is chosen on the pre-join screen goes into the call as it is: the camera opens once.
+- A reload during a call joins again by itself (the tab keeps a note in `sessionStorage`); so does a call dropped for
+  longer than LiveKit can bridge, or when its token runs out after an hour.
+- Data saver (in the call's More options) stops receiving the others' cameras; screen shares still come through.
+- Development only: `/rooms/<anything>?demo=6` shows the call screen with six sample people, to check the layout on one
+  device. Production builds do not contain it.
+
 ## Not connected to the backend yet
 
 These parts of the product have no backend yet, or are not built yet:
@@ -113,7 +135,7 @@ These parts of the product have no backend yet, or are not built yet:
 | Writing a post | Mock: the picture is shrunk to a small copy and kept in the browser; nothing is sent anywhere |
 | Sharing a post | The link (`/?post=<id>`) opens the feed: there is no page for one post |
 | Chats and messages | Connected (Phase 2). Not built: recording voice messages, "seen by", encrypted chats (read-only notice) |
-| Meetings and video | Backend ready; screens arrive in Phase 4. "Start a meeting" and the "Upcoming meetings" list already use the real API, but `/rooms/:id` is a placeholder until then |
+| Meetings and video | Connected (Phase 4). The in-call chat goes over LiveKit (the API has no endpoint for it) and is not saved: it is gone when the meeting ends, and the chat says so. No recording |
 | Push notifications | Backend ready; arrive in Phase 5 |
 | "Forgot password", changing the password, email verification | The backend has no endpoints |
 | Finding people you share no chat with | The backend has no user search |

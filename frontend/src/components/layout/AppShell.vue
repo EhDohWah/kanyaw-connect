@@ -16,12 +16,14 @@ import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useMessagingSession } from '@/composables/useMessagingSession'
 import { useAuthStore } from '@/stores/auth'
 import { useRealtimeStore } from '@/stores/realtime'
+import { useUiStore } from '@/stores/ui'
 import { errorMessage } from '@/utils/errorMessage'
 
 const { t } = useI18n()
 const route = useRoute()
 const auth = useAuthStore()
 const connection = useRealtimeStore()
+const ui = useUiStore()
 const wide = useMediaQuery('(min-width: 1024px)')
 
 useHeartbeat()
@@ -41,7 +43,7 @@ async function retry(): Promise<void> {
 <template>
   <div class="flex min-h-dvh bg-bg text-text">
     <!-- Tablet and wide screens: navigation on the left (the navigation inside is already a landmark). -->
-    <div class="sticky top-0 hidden h-dvh w-[72px] shrink-0 border-r border-border md:block lg:w-64">
+    <div v-if="!ui.callOpen" class="sticky top-0 hidden h-dvh w-[72px] shrink-0 border-r border-border md:block lg:w-64">
       <SideNav />
     </div>
 
@@ -75,7 +77,7 @@ async function retry(): Promise<void> {
     <!-- Wide screens only: who is online and what is coming up. Not made at all on the others, so nothing is fetched
          for it; they reach the same content from a button on Home. -->
     <aside
-      v-if="wide"
+      v-if="wide && !ui.callOpen"
       class="sticky top-0 h-dvh w-80 shrink-0 overflow-y-auto border-l border-border"
       :aria-label="t('shell.sidebarTitle')"
     >
@@ -83,7 +85,7 @@ async function retry(): Promise<void> {
     </aside>
 
     <BottomBar v-if="!route.meta.immersive" />
-    <ChatDrawer />
+    <ChatDrawer v-if="!ui.callOpen" />
     <CreateMenu />
     <ChatDialogs />
   </div>

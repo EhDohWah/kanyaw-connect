@@ -27,3 +27,29 @@ export function removeStorage(key: string): void {
     // not available: nothing to do
   }
 }
+
+/** sessionStorage, the same way: kept for this tab only, until it is closed (it survives a reload). */
+export function readSession(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+export function writeSession(key: string, value: string): boolean {
+  try {
+    window.sessionStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function removeSession(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key)
+  } catch {
+    // not available: nothing to do
+  }
+}

@@ -9,7 +9,7 @@ item they belong to.
 | 1. Foundation | Done, approved |
 | 2. Messaging | Done, approved |
 | 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), waiting for approval |
-| 4. Video | Not started |
+| 4. Video | Done, waiting for review |
 | 5. Push and polish | Not started |
 
 ## Phase 1: Foundation
@@ -482,7 +482,158 @@ Also fixed: one flaky test (`Dialogs.spec.ts` waited a fixed number of ticks for
 
 ## Phase 4: Video
 
-Not started.
+- [x] **Meetings page** (`/rooms`): tabs Upcoming, Hosting and Invited (the WAI-ARIA tabs pattern: arrow keys, Home, End;
+  the tab is in the address, `?tab=hosting`, so Back and a reload keep it), each a cursor-paginated list ("Show more
+  meetings") with name, host, time, status ("In progress · 3 in the call", "Not started yet", Locked) and Join; a skeleton,
+  an empty state with "New meeting", and an error with "Try again".
+  - Each tab is loaded when first shown and asked again only after a minute; a failed "Show more" keeps the list and says so
+    under the button; an answer that arrives after signing out is dropped.
+- [x] **New meeting form**: name, description, optional start time and duration, optional password, waiting room,
+  maximum people, and an optional group chat to invite.
+  - Everything the server would refuse is checked first (name up to 120, description up to 1000, a start time in the
+    future, password 4–64, 2–100 people); the server's own 422 messages go under the fields they are about.
+  - The start time is read on the clock of the person's **profile** time zone, not the browser's
+    (`fromZonedInput`/`toZonedInput`, tested on both sides of daylight-saving changes; a clock time the change skipped
+    counts as the hour after).
+  - Without a start time the button says "Start meeting" and opens the meeting; with one it says "Schedule meeting", shows
+    a toast with the time, and the meeting appears at once in Hosting (and in Upcoming, in order).
+  - Deviation: the duration is a choice of common lengths (15 minutes to 3 hours) rather than a free number, which is easier
+    on a phone; the server accepts 5–1440.
+- [x] **Pre-join** (`/rooms/:id`): room name, host, time, description, notes (waiting room, locked); a live camera preview
+  with microphone and camera switches on it; camera and microphone pickers (shown once the browser has given their names);
+  the password field only for people who will be asked (not the host, not someone already let in or waiting); Join.
+  - What is chosen here goes into the call as it is: the preview tracks are published, so the camera opens once (and a slow
+    phone does not ask twice).
+  - A camera or microphone that is blocked, missing or busy says so in plain words and the person can join without it.
+- [x] **Join state machine** (`src/stores/call.ts`, rules in `src/utils/joinOutcome.ts`): loading → pre-join → joining →
+  waiting or connecting → in the call; `over` says why it ended.
+  - Waiting: "Waiting for the host to let you in", with the preview still on, switching by itself on `room.admitted` (joins
+    again without the password) or `room.denied`. Events are hints: the room is also asked every 30 seconds, and at once
+    when the WebSocket comes back.
+  - Every refusal has its own message: password needed or wrong (the server's words), locked, full, the video service down
+    (`503`), too many tries (`429`, with the wait), no network, LiveKit not taking the connection; and the end of the road for
+    a meeting that is over, not invited (`403`), turned away (`403 join_denied`) or not found.
+- [x] **Call screen**: dark and full screen (the navigation, sidebar and chat drawer step aside, so nothing behind is in the
+  Tab order or polling). LiveKit with `adaptiveStream`, `dynacast`, the camera at `VideoPresets.h360`, simulcast.
+  - Grid: 1 fills the screen, 2 side by side, 3–4 2×2, 5–9 3×3, more in pages (buttons, and a sideways swipe) with the
+    person speaking kept on the page shown; at most 4 per page on phones. You first, then everyone in the order they came, so
+    tiles do not jump around.
+  - Deviation: on a phone two people are one above the other (side by side on an upright phone makes two slivers).
+  - Tiles: video (your own mirrored), or initials on a coloured circle when the camera is off; name tag bottom left with a
+    mic-off icon and the role; a ring in `primary` on the person speaking; a sign for a weak connection; one sentence for
+    screen readers ("Naw Paw Say, Co-host, Microphone off, Speaking").
+  - Note: the `primary` ring is about 2:1 against the dark tiles, so it is easy to miss. It is 3 px as asked; a lighter blue
+    for the dark screen would be easier to see.
+- [x] **Screen share**: the newest share takes the stage (never cropped), everyone's camera in a strip below; the button only
+  where the browser can share a screen (not on Android or iOS).
+- [x] **Toolbar**: microphone and camera (on: dark; off: light with the crossed-out icon, and `aria-pressed`), share screen,
+  chat (with the number of new messages), participants (with the number waiting, for hosts), more options, and Leave in
+  `danger`. The host's Leave asks: "Leave meeting" or "End meeting for everyone" (asked twice; if the server cannot end it
+  the meeting carries on and says so). 44 px buttons on phones so all seven fit 360 px, 48 px from 640 px.
+- [x] **Participants tab**: everyone with microphone and camera icons and role badges. Hosts and co-hosts also see "Waiting
+  to join" (Admit, Deny) and a menu per person: mute microphone, turn off camera (only what is on), make co-host (host only,
+  participants only), remove (asked twice). A co-host cannot act on the host or another co-host; nobody on themselves. The
+  host can also lock the meeting (the API has it; the prompt lists it with the host controls).
+- [x] **In-call chat** over LiveKit text streams on topic `chat` (`sendText` / `registerTextStreamHandler`, checked against
+  livekit-client 2.23): "Messages disappear when the meeting ends."; names and times, links that work, no markup; Enter sends
+  with a keyboard and mouse, the button on a phone; a message that could not be sent keeps its words.
+- [x] **Room events** (`presence-room.{id}` during the call, and the user channel): `room.ended` disconnects and says "The
+  meeting has ended"; `room.role_changed` updates badges and controls (when the host role moves on, whoever had it becomes a
+  participant: the server announces only the new host) and tells the person ("You are now a co-host.", and a new co-host
+  sees who is already waiting); `room.join_requested` adds to the waiting list, and outside the meeting shows the host a
+  toast; someone removed sees "You were removed from the meeting".
+- [x] **Resilience and data use**: "Reconnecting…" while LiveKit gets a drop back, and at once when the browser says the
+  network is gone. A longer drop or an expired one-hour token joins again by itself (three tries) with the microphone and
+  camera as they were; a reload during the call does too (a note in `sessionStorage`), straight back in without the pre-join
+  screen. "Data saver: turn off incoming video" (in More options) stops receiving the others' cameras.
+  - Deviation: data saver keeps screen shares coming, so a presentation can still be followed. It starts from
+    `settings.data_saver` when that is set; saving it in Settings is Phase 5.
+  - When the browser blocks sound (a reload with no click), "Turn on sound".
+- [x] **Layout preview** (development builds only): `/rooms/<anything>?demo=4` shows the call screen with that many sample
+  people (initials, one speaking, one muted). It is loaded behind `import.meta.env.DEV`; the production build does not
+  contain it (checked in `dist/`).
+- [x] Tests, mutation checks, real-browser run with people in a real LiveKit call, README, this file (below).
+
+Also in this phase:
+
+- `livekit-client` (2.23) is loaded only when a meeting is opened, in a file of its own (138 KB compressed), so the rest of
+  the app does not wait for it and an app update does not make phones download it again.
+- New shared parts: `BaseSelect`, `BaseSwitch` (a real `role="switch"`), and colour tokens for the dark screen
+  (`call-raised`, `on-call-muted`, `on-call-danger`: the usual danger red is too dark to read on it).
+
+### Verification (Phase 4)
+
+- `npm run build`, `npm run type-check` and `npm run test` pass: **1053 tests in 75 files** (862 in 64 before this phase), the
+  whole suite run twice in a row. The backend was not changed.
+- New tests cover the join state machine (every answer of `POST /rooms/{room}/join`, the waiting room with its events and its
+  30-second check, drops and joining again, token renewal, the end of a meeting while joining again), the call store against
+  a fake LiveKit room (participants, roles and the host moving on, the waiting list, chat, data saver, media failures, the
+  reload note), the grid rules, the time-zone conversion, the Meetings tabs and form, the pre-join screen, the call screen
+  (grid, pages, swipe, screen share, toolbar, Leave and End, banners, the side panel on a phone and a wide screen), the
+  participants tab with every host control, the chat, and the new real-time channels and events.
+- Mutation checks: **40 behaviours were broken on purpose, one at a time, and a test failed each time** (for example: a wrong
+  and a missing password mixed up, no waiting-room check, "let in" ignored, removed people joining again, nothing asking
+  whether the meeting ended after a refused reconnect, the rejoin note written while connecting, the pre-join closing the
+  tracks the call took, two hosts after the role moves on, a co-host acting on a co-host, data saver letting new cameras
+  through or stopping screen shares, the speaker not kept on screen, the host leaving without the choice, ending or removing
+  asked only once, the start time read in the browser's zone). One broke nothing at first: an instant meeting put in
+  Upcoming, because the test only tried it with that tab not loaded (the test now loads it).
+- Real Chromium with a fake camera, microphone and screen, against the running API, Reverb and a real LiveKit server
+  (`livekit/livekit-server:v1.13.10`, the version `docker-compose.yml` uses), with its webhooks reaching the API:
+  **69 checks pass** (42 on desktop with three people, 27 on a phone and a tablet), and the 196 checks of Phases 2 and 3 and
+  of the review still pass (36 + 44 + 64 + 30 + 22). Each suite was run on a freshly seeded database; the desktop suite twice in
+  a row.
+  - Desktop: the Meetings tabs (keyboard, address), a meeting scheduled for the committee (toast with the time in the profile's
+    time zone, in Hosting at once, under Invited for a member), a meeting with a password and a waiting room: the host is not
+    asked for the password, a wrong one says so, the right one waits, the host sees "1" on Participants and Admits, and the
+    guest goes in by herself; both cameras and the voices come through; the speaking ring; mute; chat both ways (the "1 new"
+    count, Enter sends); turn off camera, make co-host (she is told), lock (a newcomer is told), Deny by the co-host, data
+    saver (her camera no longer received), a reload straight back into the call, remove ("You were removed from the meeting",
+    no Rejoin), and "End meeting for everyone" (both see "The meeting has ended", the shell comes back).
+  - Phone and tablet: the Meetings page and the New meeting sheet, the pre-join preview filling the width, a call with the
+    computer (one above the other, toolbar inside 390 px with 44 px buttons), the Participants sheet covering the call with the
+    focus in it and back on the button after closing, a real screen share from the computer seen on the phone, going offline
+    ("Reconnecting…" at once, then back in the call), and the layout preview (2×2 for 4, 3×3 and two pages for 12, four per
+    page and a swipe to page 2 on a phone, 3×3 on a tablet).
+  - axe (WCAG 2.1 AA and best practice): the Meetings page, the New meeting dialog, the pre-join (desktop and phone), the
+    waiting room, the call screen with the participants panel, with the chat, and on a phone, and the participants sheet.
+- The production build does not contain the layout preview (checked in `dist/`); `livekit-client` is only in its own file,
+  loaded with the meeting page.
+- Not verified here: Safari and Firefox (only Chromium was available); real phones (touch was emulated, so the Share screen
+  button still showed on the emulated phone: real Android and iOS browsers cannot share a screen and do not show it); calls
+  across real networks and TURN (everything ran on one machine); a real one-hour token expiry (the rejoin path is tested with
+  LiveKit's disconnect reasons, and the reload path in the browser); the "Turn on sound" prompt in a browser (the test browser
+  allows sound; it is covered by unit tests).
+
+### Real problems found while building this phase (all fixed, with a test)
+
+1. The camera and microphone went dead the moment someone joined (found in the real browser run). While connecting, LiveKit
+   reports the tracks it publishes; that snapshot saved the "rejoin after a reload" note too early, the screen swapped the
+   pre-join for "Joining again…", and the pre-join, going away, closed the very tracks being sent. The note is now written
+   only once in the call, and the pre-join closes only tracks the call did not take.
+2. A guest could miss the end of a meeting. The server tells LiveKit first and marks the meeting ended a moment later; a
+   guest disconnected in between (for a reason other than "room deleted") tried to join again, and had stopped listening to
+   the room's channel. The channel now stays during a rejoin, a refused reconnect asks the room whether it ended, and nothing
+   reconnects once the call is over.
+3. A reload during a call flashed the pre-join screen (and opened the camera) before joining again.
+4. On a 390 px phone the toolbar was 10 px too wide.
+5. Going offline showed nothing for up to 20 seconds (until LiveKit's ping timed out).
+6. Swiping between pages with a mouse selected the name tags.
+7. Section headings in the participants panel skipped a level (axe).
+8. The device lists were read while the browser was still asking for the camera or microphone, so a refusal made LiveKit warn
+   in the console; they are now read once both have settled.
+
+### Backend gaps and notes found in this phase
+
+- docs/API.md shows the answers of `admit`, `deny` and `co-hosts` bare; the server wraps them in `data`, like every other
+  single object. The app accepts both.
+- `room.role_changed` is sent only for the new host when the host role moves on; the previous host's new role
+  (participant) is not announced. The app works it out (there is one host).
+- Ending a meeting tells LiveKit first, then marks it ended: for a moment someone disconnected can still be "admitted"
+  again. The app copes (above); refusing joins while a meeting is ending would close the gap on the server.
+- In-call chat has no endpoint (as in the prompt): LiveKit text streams, not saved.
+- A scheduled meeting cannot be edited or cancelled (as in the prompt); the host can end it.
+- Nothing blocked the phase.
 
 ## Phase 5: Push and polish
 

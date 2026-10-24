@@ -145,3 +145,58 @@ export function formatMeetingTime(iso: string, now: number, timeZone: string, lo
     minute: '2-digit',
   }).format(new Date(iso))
 }
+
+/** The wall-clock parts of a moment in a time zone. */
+function zonedParts(ms: number, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts = formatter('en', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(ms))
+  const get = (type: Intl.DateTimeFormatPartTypes): number => Number(parts.find((part) => part.type === type)?.value)
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute'), second: get('second') }
+}
+
+/** How far a time zone is ahead of UTC at a moment, in milliseconds. */
+function zoneOffset(ms: number, timeZone: string): number {
+  const p = zonedParts(ms, timeZone)
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - (ms - (ms % 1000))
+}
+
+const pad = (n: number): string => String(n).padStart(2, '0')
+
+/**
+ * A moment as the value of an `<input type="datetime-local">` ("2026-03-14T16:30") on the clock of a time zone: the
+ * person's own (from their profile), which may not be the browser's.
+ */
+export function toZonedInput(iso: string | number | Date, timeZone: string): string {
+  const p = zonedParts(new Date(iso).getTime(), safeTimeZone(timeZone))
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`
+}
+
+/**
+ * The moment a `datetime-local` value ("2026-03-14T16:30") means on the clock of a time zone, as an ISO string in UTC.
+ * `null` for a value that is not a date. A clock time skipped by a daylight-saving change counts as the hour after.
+ */
+export function fromZonedInput(value: string, timeZone: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const [year, month, day, hour, minute] = match.slice(1).map(Number) as [number, number, number, number, number]
+  const tz = safeTimeZone(timeZone)
+
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute)
+  if (Number.isNaN(asUtc)) return null
+  // Two guesses: with the zone's offset at that clock time read as UTC, and with its offset at the first guess. Near a
+  // daylight-saving change they differ; the right one shows the same clock time again. A time the change skipped
+  // (02:30 on the night clocks jump from 02:00 to 03:00) shows on neither: the later guess is the hour after.
+  const first = asUtc - zoneOffset(asUtc, tz)
+  const second = asUtc - zoneOffset(first, tz)
+  const fits = (moment: number): boolean => toZonedInput(moment, tz) === value
+  const moment = fits(first) ? first : fits(second) ? second : Math.max(first, second)
+  return new Date(moment).toISOString()
+}

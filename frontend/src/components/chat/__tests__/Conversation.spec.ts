@@ -122,7 +122,7 @@ describe('opening a conversation', () => {
   it('listens to the chat’s channels while it is open, and lets go when it is closed', async () => {
     serve({ chat: makeChat(), messages: [theirs('x')] })
     const nothing = () => undefined
-    realtime.connect('t', ME, { messageSent: nothing, messageRead: nothing, chatUpdated: nothing, chatMemberAdded: nothing, chatMemberRemoved: nothing }, { status: nothing, connected: nothing })
+    realtime.connect('t', ME, { messageSent: nothing, messageRead: nothing, chatUpdated: nothing, chatMemberAdded: nothing, chatMemberRemoved: nothing, roomAdmitted: nothing, roomDenied: nothing, roomJoinRequested: nothing }, { status: nothing, connected: nothing })
     const { wrapper } = await open({ chat: makeChat(), messages: [theirs('x')] })
     const echo = lastEcho()
 
