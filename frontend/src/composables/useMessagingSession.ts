@@ -8,6 +8,7 @@ import { useDraftsStore } from '@/stores/drafts'
 import { useFeedStore } from '@/stores/feed'
 import { useMessagesStore } from '@/stores/messages'
 import { usePresenceStore } from '@/stores/presence'
+import { usePushStore } from '@/stores/push'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
@@ -19,9 +20,10 @@ export const PRESENCE_REFRESH_MS = 60_000
 export const PRESENCE_DEBOUNCE_MS = 200
 
 /**
- * Everything messaging needs while the signed-in app is on screen: the WebSocket, the chat list, the online dots, and
- * the repair work after a drop. Used once, by the app shell. Signing out (the shell going away) closes the connection
- * and forgets every cached chat, so the next person to sign in on this browser starts clean.
+ * Everything messaging needs while the signed-in app is on screen: the WebSocket, the chat list, the online dots, the
+ * repair work after a drop, and notifications for when the app is closed. Used once, by the app shell. Signing out (the
+ * shell going away) closes the connection, stops notifications on this browser and forgets every cached chat, so the
+ * next person to sign in on this browser starts clean.
  */
 export function useMessagingSession(): void {
   const auth = useAuthStore()
@@ -34,6 +36,7 @@ export function useMessagingSession(): void {
   const feed = useFeedStore()
   const rooms = useRoomsStore()
   const ui = useUiStore()
+  const push = usePushStore()
 
   let startedFor: string | null = null
   let presenceTimer: ReturnType<typeof setInterval> | undefined
@@ -62,6 +65,8 @@ export function useMessagingSession(): void {
     })
 
     void chats.fetchChats()
+    // Signing out ended this browser's notifications; whoever had them on gets them back.
+    void push.restore()
     presenceTimer = setInterval(() => {
       if (document.visibilityState === 'visible') void refreshPresence()
     }, PRESENCE_REFRESH_MS)
@@ -83,6 +88,7 @@ export function useMessagingSession(): void {
     feed.reset()
     rooms.reset()
     status.reset()
+    push.forget()
     ui.resetForSignOut()
   }
 

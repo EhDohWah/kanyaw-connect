@@ -3,6 +3,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { setSocketIdResolver, setTokenProvider, setUnauthorizedHandler } from '@/api/http'
 import { setLocale } from '@/i18n'
 import { createMockFeedService } from '@/mocks/feedService'
+import { setBrowserPush } from '@/push/browser'
 import { setFeedService } from '@/services'
 import { useAuthStore } from '@/stores/auth'
 import { echoes, fakeEchoFactory } from '@/__tests__/fakeEcho'
@@ -35,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   unmountAll()
   setFeedService(null)
+  setBrowserPush(null)
   vi.useRealTimers()
   vi.restoreAllMocks()
   document.body.innerHTML = ''

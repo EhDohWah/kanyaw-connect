@@ -5,6 +5,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { lastEcho } from '@/__tests__/fakeEcho'
+import { SUBSCRIPTION, useFakePush } from '@/__tests__/fakePush'
 import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMember, makeMessage, makeRoom, makeUser, page, person, restoreApi, settle, signIn, type Call } from '@/__tests__/helpers'
 import { useMessagingSession } from '@/composables/useMessagingSession'
 import { realtime } from '@/realtime'
@@ -14,6 +15,7 @@ import { useChatsStore } from '@/stores/chats'
 import { useFeedStore } from '@/stores/feed'
 import { useMessagesStore } from '@/stores/messages'
 import { usePresenceStore } from '@/stores/presence'
+import { PUSH_OWNER_KEY, usePushStore } from '@/stores/push'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
@@ -92,6 +94,34 @@ describe('starting and stopping', () => {
     expect(echo.disconnected).toBe(true)
     expect(useChatsStore().chats).toEqual([])
     expect(usePresenceStore().isOnline(PAW)).toBe(false)
+  })
+
+  it('turns notifications back on for whoever had them on in this browser (signing out ended them)', async () => {
+    window.localStorage.setItem(PUSH_OWNER_KEY, ME)
+    useFakePush({ permission: 'granted' })
+    const { calls } = serve((call) =>
+      call.url === '/push/public-key'
+        ? { data: { data: { enabled: true, public_key: 'BAfd' } } }
+        : call.url === '/push/subscriptions' && call.method === 'post'
+          ? { status: 201, data: { data: { id: 'sub-1', endpoint: SUBSCRIPTION.endpoint, created_at: '' } } }
+          : undefined,
+    )
+    await start()
+    await settle()
+
+    expect(calls.filter((c) => c.method === 'post' && c.url === '/push/subscriptions')).toHaveLength(1)
+    expect(usePushStore().status).toBe('on')
+  })
+
+  it('stops notifications on this browser when it goes away (signing out), so the next person does not get them', async () => {
+    const fake = useFakePush({ permission: 'granted', subscription: SUBSCRIPTION })
+    serve()
+    const wrapper = await start()
+
+    wrapper.unmount()
+    await settle()
+
+    expect(fake.unsubscribe).toHaveBeenCalled()
   })
 
   it('waits for the profile when it is not loaded yet, then connects', async () => {

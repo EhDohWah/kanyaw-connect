@@ -109,6 +109,22 @@ describe('opening a conversation', () => {
     expect(mounted.wrapper.find('textarea').exists()).toBe(false)
   })
 
+  it('on its own page without a chat to show (not found, failed, loading), the page still has its main heading', async () => {
+    fakeApi(() => ({ status: 403, data: { message: 'Forbidden' } }))
+    const page = await mountApp(Conversation, { props: { chatId: 'not-mine', variant: 'page' }, prepare: (p) => signedInStores(p) })
+    await settle(8)
+    expect(page.wrapper.findAll('h1').map((h) => h.text())).toEqual(['Conversation'])
+
+    const drawer = await mountApp(Conversation, { props: { chatId: 'not-mine', variant: 'drawer' }, prepare: (p) => signedInStores(p) })
+    await settle(8)
+    expect(drawer.wrapper.find('h1').exists()).toBe(false)
+  })
+
+  it('with the chat shown, its header is the only main heading', async () => {
+    const { wrapper } = await open({ chat: makeChat({ other_user: person(PAW, 'Naw Paw Say') }) })
+    expect(wrapper.findAll('h1').map((h) => h.text())).toEqual(['Naw Paw Say'])
+  })
+
   it('replaces messages and the box with a calm notice for an encrypted chat, and does not even ask for its messages', async () => {
     const chat = makeChat({ is_encrypted: true })
     const { calls } = serve({ chat, messages: [] })

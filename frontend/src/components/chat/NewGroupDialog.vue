@@ -18,7 +18,7 @@ const { t } = useI18n()
 const ui = useUiStore()
 const chats = useChatsStore()
 const openChat = useOpenChat()
-const { people, loading } = usePeople(computed(() => ui.newGroupOpen))
+const { people, loading, failed: peopleFailed, retry: retryPeople } = usePeople(computed(() => ui.newGroupOpen))
 
 const name = ref('')
 const description = ref('')
@@ -85,7 +85,7 @@ async function submit(): Promise<void> {
         <legend class="mb-1 text-sm font-medium text-text">
           {{ t('group.members') }} <span class="font-normal text-text-muted">· {{ t('people.selected', { count: members.length }) }}</span>
         </legend>
-        <PeoplePicker v-model="members" multiple :people="people" :loading="loading" :empty-text="t('people.noPeople')" />
+        <PeoplePicker v-model="members" multiple :people="people" :loading="loading" :failed="peopleFailed" :empty-text="t('people.noPeople')" @retry="retryPeople" />
         <p v-if="errors.members" class="text-sm text-danger" role="alert">{{ errors.members }}</p>
       </fieldset>
 

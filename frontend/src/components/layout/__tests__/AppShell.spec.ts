@@ -125,6 +125,8 @@ describe('AppShell', () => {
 
     expect(wrapper.get('[role=alert]').text()).toContain("Can't reach the server")
     expect(window.localStorage.getItem('kc.token')).toBe('1|secret-token')
+    // The page still has its main heading (for screen readers) while it waits.
+    expect(wrapper.findAll('h1').map((h) => h.text())).toEqual(['Kanyaw Connect'])
 
     online = true
     await wrapper.get('[role=alert] button').trigger('click')

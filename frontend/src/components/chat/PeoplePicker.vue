@@ -3,6 +3,7 @@ import { Check, Search } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import BaseButton from '@/components/common/BaseButton.vue'
 import BaseInput from '@/components/common/BaseInput.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
@@ -15,8 +16,10 @@ const props = defineProps<{
   multiple?: boolean
   modelValue?: string[]
   emptyText: string
+  /** Some people could not be loaded (the chat list, or some groups). */
+  failed?: boolean
 }>()
-const emit = defineEmits<{ 'update:modelValue': [ids: string[]]; pick: [user: PublicUser] }>()
+const emit = defineEmits<{ 'update:modelValue': [ids: string[]]; pick: [user: PublicUser]; retry: [] }>()
 
 const { t } = useI18n()
 const query = ref('')
@@ -52,6 +55,11 @@ function choose(person: PublicUser): void {
       <Skeleton v-for="row in 4" :key="row" class="h-12" />
     </div>
 
+    <div v-else-if="failed && people.length === 0" class="flex flex-col items-center gap-3 py-6 text-center" role="alert">
+      <p class="text-text">{{ t('people.loadFailed') }}</p>
+      <BaseButton variant="secondary" @click="emit('retry')">{{ t('common.retry') }}</BaseButton>
+    </div>
+
     <p v-else-if="people.length === 0" class="py-6 text-center text-text-muted">{{ emptyText }}</p>
     <p v-else-if="shown.length === 0" class="py-6 text-center text-text-muted">{{ t('people.noMatch', { query: query.trim() }) }}</p>
 
@@ -78,5 +86,11 @@ function choose(person: PublicUser): void {
         </button>
       </li>
     </ul>
+
+    <!-- Some are shown, but not everyone: say so, rather than let a missing name look like a person who is not there. -->
+    <div v-if="failed && people.length > 0 && !loading" class="flex items-center justify-between gap-3 text-sm" role="status">
+      <p class="text-text-muted">{{ t('people.someMissing') }}</p>
+      <BaseButton variant="ghost" @click="emit('retry')">{{ t('common.retry') }}</BaseButton>
+    </div>
   </div>
 </template>

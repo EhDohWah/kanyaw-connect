@@ -27,7 +27,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const chats = useChatsStore()
 const ui = useUiStore()
-const { people, loading } = usePeople(computed(() => props.open))
+const { people, loading, failed: peopleFailed, retry: retryPeople } = usePeople(computed(() => props.open))
 
 const chat = computed(() => chats.get(props.chatId))
 const members = computed(() => chat.value?.members ?? [])
@@ -154,7 +154,7 @@ async function leaveConfirmed(): Promise<void> {
       <!-- Add people -->
       <section v-if="mode === 'add'" class="flex flex-col gap-3">
         <h3 class="font-semibold">{{ t('group.addMembers') }}</h3>
-        <PeoplePicker v-model="toAdd" multiple :people="candidates" :loading="loading" :empty-text="t('group.noOneToAdd')" />
+        <PeoplePicker v-model="toAdd" multiple :people="candidates" :loading="loading" :failed="peopleFailed" :empty-text="t('group.noOneToAdd')" @retry="retryPeople" />
         <div class="flex justify-end gap-2">
           <BaseButton variant="ghost" :disabled="busy" @click="mode = 'view'">{{ t('common.cancel') }}</BaseButton>
           <BaseButton :loading="busy" :disabled="toAdd.length === 0" @click="addPeople">

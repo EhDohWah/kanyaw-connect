@@ -339,6 +339,41 @@ describe('new chat', () => {
     expect(useUiStore(pinia).newChatOpen).toBe(true)
   })
 
+  it('the chat list could not be loaded: says so (not "nobody yet"), and "Try again" asks for it again', async () => {
+    const { calls } = fakeApi(() => ({ data: page([makeChat({ id: 'd1', other_user: person(PAW, 'Naw Paw Say') })]) }))
+    const { pinia } = await open((p) => {
+      useChatsStore(p).status = 'error'
+      useChatsStore(p).byId = {}
+    })
+
+    expect(dialog()?.textContent).toContain("Couldn't load the people from your chats.")
+    expect(dialog()?.textContent).not.toContain('You do not have anyone to message yet.')
+    byText('Try again', dialog()!)?.click()
+    await settle(4)
+
+    expect(calls.filter((c) => c.method === 'get' && c.url === '/chats')).toHaveLength(1)
+    expect(useChatsStore(pinia).status).toBe('ready')
+    expect(dialog()?.textContent).toContain('Naw Paw Say')
+  })
+
+  it('a group that could not be opened: shows the others, says some are missing, and "Try again" opens it again', async () => {
+    const group = groupChat('owner')
+    let fail = true
+    const { calls } = fakeApi((call) => (call.url === `/chats/${CHAT_ID}` ? (fail ? { network: true } : { data: { data: group } }) : { data: page([]) }))
+    await open((p) => useChatsStore(p).put({ ...group, members: undefined }))
+    await settle(4)
+
+    expect(dialog()?.textContent).toContain('Naw Paw Say')
+    expect(dialog()?.textContent).toContain('Some people from your groups could not be loaded.')
+    fail = false
+    byText('Try again', dialog()!)?.click()
+    await settle(4)
+
+    expect(calls.filter((c) => c.url === `/chats/${CHAT_ID}`)).toHaveLength(2)
+    expect(dialog()?.textContent).toContain('Naw Mu Moo')
+    expect(dialog()?.textContent).not.toContain('could not be loaded')
+  })
+
   it('learns who is in your groups even when the dialog is opened before the chat list has arrived', async () => {
     const group = groupChat('owner')
     const { calls } = fakeApi((call) => (call.url === `/chats/${CHAT_ID}` ? { data: { data: group } } : { data: page([]) }))
@@ -379,6 +414,27 @@ describe('people picker', () => {
 
     const empty = await mountPicker({ people: [] })
     expect(empty.wrapper.text()).toContain('Nobody here')
+  })
+
+  it('could not load anybody: says so with "Try again" (an alert, not the "nobody" text)', async () => {
+    const { wrapper } = await mountPicker({ people: [], failed: true })
+
+    expect(wrapper.get('[role=alert]').text()).toContain("Couldn't load the people from your chats.")
+    expect(wrapper.text()).not.toContain('Nobody here')
+    await wrapper.get('[role=alert] button').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('could load some: lists them, says some are missing, and offers "Try again" (not while loading)', async () => {
+    const { wrapper } = await mountPicker({ failed: true })
+
+    expect(wrapper.findAll('li')).toHaveLength(3)
+    expect(wrapper.text()).toContain('Some people from your groups could not be loaded.')
+    await wrapper.findAll('button').find((b) => b.text() === 'Try again')!.trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.text()).not.toContain('could not be loaded')
   })
 
   it('shows a placeholder while the people load', async () => {

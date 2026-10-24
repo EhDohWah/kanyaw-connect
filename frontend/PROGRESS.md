@@ -8,9 +8,10 @@ item they belong to.
 |---|---|
 | 1. Foundation | Done, approved |
 | 2. Messaging | Done, approved |
-| 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), waiting for approval |
-| 4. Video | Done, waiting for review |
-| 5. Push and polish | Not started |
+| 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), approved |
+| 4. Video | Done, approved |
+| 5. Push and polish | Done, waiting for review |
+| 6. Voice messages and one-to-one calls (added after the build prompt) | Planned, after Phase 5 |
 
 ## Phase 1: Foundation
 
@@ -637,4 +638,106 @@ Also in this phase:
 
 ## Phase 5: Push and polish
 
-Not started.
+- [x] **Service worker** (`public/sw.js`, plain JavaScript served as it is, type-checked by `tsconfig.sw.json`): shows the
+  notification the server sends (`message.new`) with the server's title and text, the app icon and a badge; one per chat,
+  or per meeting for an invitation (a newer one replaces the older and still makes a sound). Tapped: the meeting
+  (`/rooms/{room_id}`) when there is one, otherwise the chat (`/chats/{chat_id}`).
+  - Deviation (better than the docs' example, which always opens a new window): when the app is already open, its window
+    is brought forward and moves to the page itself, without reloading; a new window only when none is open.
+  - During a meeting a tap does not leave the call (that would end it): the app stays and says so.
+  - Something unreadable still shows a notification (browsers expect one for every push); ids that are not ids never
+    become part of an address. The worker caches nothing and takes over at once, so it cannot hold back a new version.
+- [x] **Push subscription flow** (`src/stores/push.ts`, `src/push/browser.ts`): `GET /push/public-key` (when `enabled` is
+  `false` the Notifications section is not shown at all), permission asked straight from the tap (Safari asks only
+  then), `pushManager.subscribe` with the key (a subscription made with an older key is replaced), `POST
+  /push/subscriptions` with `subscription.toJSON()`. Turning off ends the browser's subscription first (then nothing can
+  arrive, even if the server cannot be reached), then `DELETE /push/subscriptions/{id}`.
+  - Where things stand is worked out from the browser's subscription and the server's list (`GET /push/subscriptions`,
+    matched by endpoint), so a reload sends nothing (the server allows 30 registrations an hour).
+  - Signing out ends the subscription on the server (it belongs to the sign-in) and the app ends the browser's too, so the
+    next person on a shared phone does not get the previous person's notifications. Signing in again as the same person
+    turns them back on without asking (only if the browser still allows them); someone else signing in does not.
+  - When the browser replaces a subscription by itself (`pushsubscriptionchange`, Firefox), open windows register the new
+    one; otherwise it happens the next time the app starts.
+  - Added (not asked for): `manifest.webmanifest` and icons, because on iPhones and iPads web push works only for an app
+    added to the Home Screen; it also makes the app installable on Android.
+- [x] **Settings page** (`/settings`): Notifications, Meetings and Account sections.
+  - Notifications: a switch "Notifications on this browser", with every state in words: checking, on, off, turning on or
+    off, blocked (with how to allow them again in the browser; the page notices when they are allowed, and when the
+    person comes back to it), this browser cannot, an iPhone not opened from the Home Screen (how to add it), and a
+    failed check with "Try again".
+  - Data saver: stored in `settings.data_saver` via `PATCH /me` (only that key; the server merges), changed at once and put
+    back with the reason if the server refuses. Every meeting starts with it.
+  - Deviation: the data saver in a call's More options changes it for that meeting only, so turning it on for one bad
+    connection does not silently hide everyone's video in every later meeting.
+  - Sign out, as before.
+- [x] **Accessibility pass** over every page and the main dialogs, at 390, 820 and 1280 px, signed in and out: axe (WCAG 2.1
+  A and AA, and best practice), keyboard only (skip link, a focus ring on every stop, focus kept in dialogs and given back,
+  focus and title after moving to another page), touch targets, reflow at 320 px, reduced motion, the page language.
+  Found and fixed:
+  - "Page not found", and a chat page that could not show its chat (not found, failed, loading), had no main heading.
+    `EmptyState` can now be the page's heading (`level`), and the chat page keeps a heading for screen readers.
+  - The waiting screen when the server cannot be reached at start had no main heading either.
+  - Deviation: `text-muted` is `#6B6B73` instead of the prompt's `#71717A`, which is 4.4:1 on `surface` and 4.2:1 on
+    `primary-soft`, under WCAG AA's 4.5:1 (found on the picture drop zone of the Create dialog; the same grey sits on
+    hover and selected rows and on other people's chat bubbles). The new grey is 4.8:1 and 4.6:1 and looks the same.
+- [x] **Empty and error states everywhere**: each list and page was checked with the server failing (chat list, meetings,
+  notifications, who is online, upcoming meetings) and with nothing to show. Found and fixed:
+  - "New chat", "New group" and "Add people" said "You do not have anyone to message yet" when the chat list had in fact
+    failed to load, and quietly left out the members of groups that could not be opened. They now say so, with "Try
+    again".
+  - A page whose code could not be downloaded did nothing at all (this happens to a tab left open while a new version
+    goes online: the old file names are gone). The app now loads that page afresh, once, which also brings the new
+    version; if it fails again, or the browser is offline, it says so instead of reloading in a loop.
+- [x] **README**: setup (with the push keys), environment variables, notifications, accessibility, deploying, and "Not
+  connected to the backend yet".
+- [x] Tests, mutation checks, real-browser run, this file (below).
+
+Also in this phase: the build no longer warns about the size of the video library's file (it is known and loaded only
+with a meeting).
+
+### Verification (Phase 5)
+
+- `npm run build`, `npm run type-check` (now also the service worker) and `npm run test` pass: **1171 tests in 82 files**
+  (1053 in 75 before this phase). The backend was not changed.
+- Mutation checks: **45 behaviours were broken on purpose, one at a time, and a test failed each time** (for example: no tag,
+  so notifications pile up; a tap that opens a second window, or leaves a meeting; the permission asked after waiting, which
+  Safari refuses; a question closed without answering counted as blocked; signing out leaving the browser subscribed;
+  someone else's choice turned on at sign-in; every reload registering again; a reload loop after an app update; the
+  missing main headings). One broke nothing at first: an answer arriving after signing out, because the test signed out
+  before the request went; it now signs out while the server's list is on its way.
+- Real Chromium against the running API, queue worker, Reverb and LiveKit, with a local stand-in for the browser's push
+  service (headless Chromium cannot reach Google's): **40 push and Settings checks pass (twice)**. The server's real
+  notification was decrypted with the browser's keys and handed to the real service worker; the tap was simulated.
+- The accessibility and error-state sweep (83 checks) and the earlier phases' browser suites are being run again on the
+  final code; the results follow in the next commit.
+
+### Real problems found while building this phase (all fixed, with a test)
+
+1. A chat page that could not show its chat, "Page not found" and the start-up error had no main heading (axe).
+2. Muted text was under WCAG AA contrast on grey and light-blue backgrounds (axe; the token above).
+3. People pickers said "nobody yet" when loading had failed, and hid failed groups.
+4. A page whose code could not be downloaded after an app update did nothing.
+
+### Backend gaps and notes found in this phase
+
+- The notification text (title and body, "Sent a photo", "started a video room") is written by the server in English. The
+  app shows it as sent; `users.locale` is known to the server, which could write it in the person's language.
+- The backend's `APP_NAME` defaults to "Karen Connect" (`.env.example`, `docker-compose.yml`), and the server uses it as
+  the notification title for encrypted chats and unnamed groups, while the app is "Kanyaw Connect". Setting
+  `APP_NAME="Kanyaw Connect"` makes them match.
+- A subscription has only an endpoint (no device name or browser), so the app cannot list "your other devices". Not
+  needed for this phase.
+- docs/API.md's example click handler always opens a new window; the app focuses the open one instead (above).
+- Nothing blocked the phase.
+
+## Phase 6 (planned): voice messages and one-to-one calls
+
+Added after the build prompt, to start once Phase 5 is approved. Not designed in detail yet.
+
+1. **Recording voice messages** in a chat (the browser's MediaRecorder: record, see the time, cancel or send), sent through
+   the existing attachment and message endpoints. The backend already accepts `voice` messages; no backend change.
+2. **One-to-one calls**: "Video call" and "Voice call" in a direct chat, an incoming-call screen with a ringtone, a voice-only
+   call layout, and notifications that open the call. Today's API can start a meeting linked to the direct chat; a small
+   backend addition (a call invitation with ringing / declined / missed) would let the caller know when the other person
+   declines or does not answer.

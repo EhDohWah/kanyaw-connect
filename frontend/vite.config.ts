@@ -13,6 +13,8 @@ export default defineConfig({
     },
   },
   build: {
+    // The video library alone is about 530 KB (140 KB compressed). It is in its own file, loaded only with a meeting.
+    chunkSizeWarningLimit: 600,
     rolldownOptions: {
       output: {
         codeSplitting: {

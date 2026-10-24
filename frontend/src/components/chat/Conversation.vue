@@ -117,6 +117,8 @@ function refreshLinks(messageId: string): void {
       @open-full="emit('openFull')"
       @collapse="emit('collapse')"
     />
+    <!-- On its own page, before (or instead of) the chat's header: the page still has its main heading. -->
+    <h1 v-else-if="variant === 'page'" class="sr-only">{{ t('placeholders.chatTitle') }}</h1>
 
     <!-- Finding the chat -->
     <div v-if="state === 'loading'" class="flex flex-1 flex-col justify-end gap-3 p-4" role="status">

@@ -14,7 +14,7 @@ const { t } = useI18n()
 const ui = useUiStore()
 const chats = useChatsStore()
 const openChat = useOpenChat()
-const { people, loading } = usePeople(computed(() => ui.newChatOpen))
+const { people, loading, failed: peopleFailed, retry: retryPeople } = usePeople(computed(() => ui.newChatOpen))
 
 async function pick(person: PublicUser): Promise<void> {
   try {
@@ -30,6 +30,6 @@ async function pick(person: PublicUser): Promise<void> {
 <template>
   <Modal :open="ui.newChatOpen" :title="t('people.newChatTitle')" @close="ui.newChatOpen = false">
     <p class="mb-4 text-sm text-text-muted">{{ t('people.newChatNote') }}</p>
-    <PeoplePicker :people="people" :loading="loading" :empty-text="t('people.noPeople')" @pick="pick" />
+    <PeoplePicker :people="people" :loading="loading" :failed="peopleFailed" :empty-text="t('people.noPeople')" @pick="pick" @retry="retryPeople" />
   </Modal>
 </template>

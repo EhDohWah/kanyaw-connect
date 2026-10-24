@@ -17,7 +17,8 @@
   --color-surface: #f4f4f5;
   --color-border: #e4e4e7;
   --color-text: #18181b;
-  --color-text-muted: #71717a;
+  /* The brief's #71717a is 4.4:1 on surface and 4.2:1 on primary-soft, under WCAG AA's 4.5; this is 4.8 and 4.6. */
+  --color-text-muted: #6b6b73;
 
   /* Brand */
   --color-primary: #1d4e89;

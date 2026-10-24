@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setUnauthorizedHandler } from '@/api/http'
 import { LOGIN_REPLY, fakeApi, makeUser, restoreApi, signIn } from '@/__tests__/helpers'
@@ -200,6 +200,47 @@ describe('profile', () => {
 
     expect(calls.at(-1)?.body).toEqual({ name: 'New Name' })
     expect(auth.user?.name).toBe('New Name')
+  })
+
+  it('saveSettings changes the setting at once, sends only that key, and keeps the server\'s answer', async () => {
+    signIn()
+    let release: () => void = () => undefined
+    const { calls } = fakeApi(async (call) => {
+      if (call.method !== 'patch') return { data: { data: makeUser({ settings: { theme: 'light' } }) } }
+      await new Promise<void>((resolve) => (release = resolve))
+      return { data: { data: makeUser({ settings: { theme: 'light', data_saver: true } }) } }
+    })
+    const auth = useAuthStore()
+    await auth.ensureUser()
+
+    const saving = auth.saveSettings({ data_saver: true })
+    expect(auth.user?.settings).toEqual({ theme: 'light', data_saver: true })
+    await vi.waitFor(() => expect(calls.at(-1)?.method).toBe('patch'))
+    release()
+    await saving
+
+    expect(calls.at(-1)).toMatchObject({ method: 'patch', url: '/me', body: { settings: { data_saver: true } } })
+    expect(auth.user?.settings).toEqual({ theme: 'light', data_saver: true })
+  })
+
+  it('saveSettings puts the setting back, keeping the others, when the server refuses', async () => {
+    signIn()
+    fakeApi((call) =>
+      call.method === 'patch'
+        ? { status: 422, data: { message: 'The settings field must be an array.' } }
+        : { data: { data: makeUser({ settings: { theme: 'light', data_saver: false } }) } },
+    )
+    const auth = useAuthStore()
+    await auth.ensureUser()
+
+    await expect(auth.saveSettings({ data_saver: true })).rejects.toMatchObject({ status: 422 })
+    expect(auth.user?.settings).toEqual({ theme: 'light', data_saver: false })
+  })
+
+  it('saveSettings does nothing when nobody is signed in', async () => {
+    const { calls } = fakeApi(() => ({ data: {} }))
+    await useAuthStore().saveSettings({ data_saver: true })
+    expect(calls).toHaveLength(0)
   })
 
   it('changeLocale switches the language at once and saves it on the account', async () => {

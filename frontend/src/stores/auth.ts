@@ -129,6 +129,24 @@ export const useAuthStore = defineStore('auth', () => {
     return updated
   }
 
+  /**
+   * Changes settings at once and saves them (the server merges them key by key). If the server refuses, they go back
+   * to what they were and the error is thrown.
+   */
+  async function saveSettings(patch: Record<string, unknown>): Promise<void> {
+    const current = user.value
+    if (!current) return
+    const before = Object.fromEntries(Object.keys(patch).map((key) => [key, current.settings[key]]))
+    user.value = { ...current, settings: { ...current.settings, ...patch } }
+
+    try {
+      await updateProfile({ settings: patch })
+    } catch (error) {
+      if (user.value?.id === current.id) user.value = { ...user.value, settings: { ...user.value.settings, ...before } }
+      throw error
+    }
+  }
+
   async function uploadAvatar(file: Blob, onProgress?: (percent: number) => void): Promise<User> {
     const updated = await meApi.uploadAvatar(file, onProgress)
     user.value = updated
@@ -159,6 +177,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     updateProfile,
+    saveSettings,
     uploadAvatar,
     changeLocale,
   }

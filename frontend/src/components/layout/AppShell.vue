@@ -65,12 +65,10 @@ async function retry(): Promise<void> {
         {{ connection.browserOnline ? t('shell.reconnecting') : t('shell.offline') }}
       </div>
 
-      <ErrorState
-        v-if="auth.bootError"
-        :message="errorMessage(auth.bootError, t)"
-        :retrying="retrying"
-        @retry="retry"
-      />
+      <template v-if="auth.bootError">
+        <h1 class="sr-only">{{ t('app.name') }}</h1>
+        <ErrorState :message="errorMessage(auth.bootError, t)" :retrying="retrying" @retry="retry" />
+      </template>
       <RouterView v-else />
     </main>
 
