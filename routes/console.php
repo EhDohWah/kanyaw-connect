@@ -16,4 +16,5 @@ Schedule::command('rooms:end-stale')->everyFifteenMinutes()->withoutOverlapping(
 Schedule::command('attachments:purge-orphans')->hourly()->withoutOverlapping()->onOneServer();
 Schedule::command('messages:purge-deleted')->timezone('Asia/Bangkok')->dailyAt('03:10')->withoutOverlapping()->onOneServer();
 Schedule::command('sanctum:prune-expired --hours=24')->timezone('Asia/Bangkok')->dailyAt('03:30')->onOneServer();
+Schedule::command('auth:clear-resets')->timezone('Asia/Bangkok')->dailyAt('03:35')->onOneServer();
 Schedule::command('queue:prune-failed --hours=168')->timezone('Asia/Bangkok')->dailyAt('03:40')->onOneServer();

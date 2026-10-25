@@ -8,10 +8,12 @@ use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ChatMemberController;
 use App\Http\Controllers\Api\V1\ChatReadController;
 use App\Http\Controllers\Api\V1\DeviceController;
+use App\Http\Controllers\Api\V1\EmailVerificationController;
 use App\Http\Controllers\Api\V1\KeyBundleController;
 use App\Http\Controllers\Api\V1\LiveKitWebhookController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
+use App\Http\Controllers\Api\V1\PasswordController;
 use App\Http\Controllers\Api\V1\PresenceController;
 use App\Http\Controllers\Api\V1\PushSubscriptionController;
 use App\Http\Controllers\Api\V1\RoomAuditLogController;
@@ -26,6 +28,18 @@ Route::prefix('v1')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
         Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
         Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+
+        // Forgotten password: the emailed link opens the app, which sends the token back here.
+        Route::post('forgot-password', [PasswordController::class, 'forgot'])->middleware('throttle:password-reset');
+        Route::post('reset-password', [PasswordController::class, 'reset'])->middleware('throttle:password-reset');
+
+        // Email verification. The link in the email is signed (for the path alone, so the host does not
+        // matter) and works signed out, on any device.
+        Route::post('email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+            ->name('verification.verify')
+            ->middleware(['signed:relative', 'throttle:email-verify']);
+        Route::post('email/verification-notification', [EmailVerificationController::class, 'send'])
+            ->middleware(['auth:sanctum', 'throttle:verification-email']);
     });
 
     // Attachment bytes: authorised by the signature on the URL, not by a bearer token.
@@ -45,6 +59,7 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::post('me/avatar', [MeController::class, 'avatar']);
+        Route::put('me/password', [PasswordController::class, 'update'])->middleware('throttle:password-change');
         Route::post('me/heartbeat', [PresenceController::class, 'heartbeat'])->middleware('throttle:heartbeat');
         Route::get('users/presence', [PresenceController::class, 'index']);
 

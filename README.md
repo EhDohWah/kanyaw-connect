@@ -205,7 +205,7 @@ Settings come from environment variables (`.env`). In production the Docker imag
 | `LOG_LEVEL` | `debug` | Least important message that is logged (`debug`, `info`, `warning`, `error`). The production compose file uses `info`. In Docker the log goes to `docker compose logs`. |
 | `APP_URL` | `http://localhost:8000` | The public URL of the API. Signed attachment URLs are built from it. |
 | `APP_KEY` | | Generate with `php artisan key:generate` (without Docker) or `openssl rand -base64 32` with `base64:` in front. In Docker, empty means "use the public development key", which is fine on your machine and never on a server. Losing the key makes stored push secrets unreadable. |
-| `FRONTEND_URL` | `http://localhost:5173` | Origin of the Vue frontend. |
+| `FRONTEND_URL` | `http://localhost:5173` | Origin of the Vue frontend. The links in emails (reset your password, verify your address) open pages there, so use the address people type into their browser. |
 | `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | `127.0.0.1`, `5432`, `kanyaw_connect`, `kanyaw`, `secret` | PostgreSQL |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | `127.0.0.1`, `6379`, `null` | Redis |
 | `CACHE_STORE`, `QUEUE_CONNECTION` | `redis`, `redis` | Keep both on Redis: presence and the queue depend on it. |
@@ -223,6 +223,17 @@ Settings come from environment variables (`.env`). In production the Docker imag
 | `SECURITY_HSTS` | `true` | Send `Strict-Transport-Security` on HTTPS requests. |
 | `API_RATE_LIMIT` | `300` | Requests per minute per signed-in user (flood backstop). |
 | `REGISTER_RATE_LIMIT` | `20` | Sign-ups per hour per IP address. |
+
+### Email
+
+The API sends three emails: "verify your email address" (after registering, or when asked again), "reset your password" (from "Forgot your password?"), and "your password was changed". They are queued, so **the queue worker must run**. Their links open the frontend (`FRONTEND_URL`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MAIL_MAILER` | `log` | `log` writes each email into `storage/logs/laravel.log` instead of sending it (development: copy the link from there). **On a server use `smtp`** (or another Laravel mailer), otherwise nobody receives a reset link. |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SCHEME` | | The SMTP server, for `MAIL_MAILER=smtp`. `MAIL_SCHEME` is `smtps` for port 465, empty for 587 (STARTTLS). |
+| `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME` | `noreply@example.com`, `APP_NAME` | The sender. Use an address of a domain whose SPF and DKIM records allow your mail server, or the emails land in spam. |
+| `EMAIL_VERIFICATION_EXPIRE` | `1440` | Minutes the link in a verification email works (a day). A password reset link works for 60 minutes. |
 
 ### Real-time (Reverb)
 
@@ -281,6 +292,7 @@ All run through the scheduler (the `scheduler` container, or `schedule:work` / a
 | `attachments:purge-orphans` | hourly | Deletes uploads that were never attached to a message (older than 24 h), files included |
 | `messages:purge-deleted` | daily 03:10 | Permanently removes messages deleted more than 30 days ago, with their attachment files and encrypted copies |
 | `sanctum:prune-expired --hours=24` | daily 03:30 | Deletes expired login tokens (and with them the push subscriptions made under them) |
+| `auth:clear-resets` | daily 03:35 | Deletes password reset tokens that have expired (they stop working after 60 minutes anyway) |
 | `queue:prune-failed --hours=168` | daily 03:40 | Forgets failed jobs older than a week |
 
 Each command can also be run by hand, for example `docker compose exec app php artisan messages:purge-deleted`; they print how much they removed and are safe to repeat. The longer jobs use `withoutOverlapping()` (a slow run never overlaps the next) and all but `presence:mark-offline` use `onOneServer()` (two servers do not both run it).
@@ -341,6 +353,7 @@ What the server can still see is metadata: who is in which chat, who sent a mess
 ## Security
 
 - **Authentication:** bearer tokens that expire after 30 days and are not extended by use; one token per device; logging out revokes only that device. Login is limited to 5 attempts a minute per email and IP address, registration to 20 an hour per IP address, and every signed-in user to 300 requests a minute.
+- **Passwords:** "Forgot your password?" gives the same answer whether or not the address has an account, and sends at most one link a minute per address; the link works once, for 60 minutes. Resetting signs out every device; changing the password (which needs the current one, 5 tries a minute) signs out every other device. Either way the person gets an email saying so. Email verification is not required to use the app; the address is only marked as checked.
 - **Authorisation** lives in policies and route middleware, which run before validation: a stranger gets `403` whatever they send. Some lookups answer `404` instead, so ids cannot be probed (other people's devices, messages of chats you are not in).
 - **Headers:** every response has `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a restrictive `Content-Security-Policy`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`; HTTPS responses also carry `Strict-Transport-Security`. The server does not announce its software.
 - **CORS** allows only the frontend origin(s) in `CORS_ALLOWED_ORIGINS`, with the headers the app uses (`Authorization`, `Content-Type`, `X-Device-Id`, `X-Socket-ID`).
@@ -435,6 +448,7 @@ For a deployment with Docker the section above covers most of this. The list is 
 - [ ] `php artisan migrate --force` (not `migrate:fresh`, and do not seed production). The Docker stack does this on every start.
 - [ ] Without Docker: `php artisan storage:link`, then `php artisan config:cache route:cache event:cache`; run them again after every deploy.
 - [ ] `php artisan push:vapid` once, keys saved in `.env`.
+- [ ] Email: `MAIL_MAILER=smtp` with your mail server and a `MAIL_FROM_ADDRESS` your domain's SPF and DKIM allow, and `FRONTEND_URL` set to the app's address (the links in emails open it). With the default `log` mailer nobody receives a password reset link.
 
 **Processes** (Docker restarts them; otherwise use Supervisor or systemd)
 - [ ] The API (FrankenPHP in Docker; PHP-FPM + nginx otherwise).
@@ -447,6 +461,7 @@ For a deployment with Docker the section above covers most of this. The list is 
 - [ ] `GET /up` answers `200`. `POST /auth/login` works. `php artisan schedule:list` shows the jobs.
 - [ ] Send a message between two accounts and see it arrive in real time (proves the queue worker and Reverb).
 - [ ] Join a video room from two devices on different networks, one on mobile data (proves TURN).
+- [ ] "Forgot your password?" with your own address delivers the email, and its link opens the app (proves the mailer and `FRONTEND_URL`).
 - [ ] `php artisan queue:failed` is empty after a few minutes.
 
 ## Project layout

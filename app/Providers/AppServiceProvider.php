@@ -67,6 +67,19 @@ class AppServiceProvider extends ServiceProvider
             Str::lower((string) $request->input('email')).'|'.$request->ip()
         ));
 
+        // Asking for a reset link and using one: per IP address (the broker also allows one link per
+        // address per minute). Both work signed out.
+        RateLimiter::for('password-reset', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+
+        // The current password guards the change, so it must not be guessable with a stolen token.
+        RateLimiter::for('password-change', fn (Request $request) => Limit::perMinute(5)->by($request->user()?->id ?: $request->ip()));
+
+        // Each new verification email is a real email: a few an hour is plenty.
+        RateLimiter::for('verification-email', fn (Request $request) => Limit::perHour(6)->by($request->user()?->id ?: $request->ip()));
+
+        // The verification link works signed out, so it is limited per address.
+        RateLimiter::for('email-verify', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
+
         // Clients ping every 30-60 s; this leaves room for a few devices per user.
         RateLimiter::for('heartbeat', fn (Request $request) => Limit::perMinute(12)->by($request->user()?->id ?: $request->ip()));
 

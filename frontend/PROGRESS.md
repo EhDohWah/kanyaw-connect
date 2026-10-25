@@ -11,7 +11,8 @@ item they belong to.
 | 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), approved |
 | 4. Video | Done, approved |
 | 5. Push and polish | Done, approved |
-| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done; 6B done; 6C done, waiting for review |
+| 6. Voice messages and one-to-one calls (Phase 6 prompt) | Done, approved |
+| 7. Account basics (no prompt; scope agreed in chat) | 7A (backend) done, waiting for review; 7B (app) not started |
 
 ## Phase 1: Foundation
 
@@ -1043,3 +1044,74 @@ Deviations:
 - Gaps left as the prompt says: no list of past calls (the notices are the history), no switching between voice and
   video during a call, and no calls in end-to-end encrypted chats from the app (the server allows them; the buttons are
   hidden there).
+
+## Phase 7: account basics
+
+There is no build prompt for this phase: the scope was agreed in chat ("account basics": forgot and reset password,
+change password, email verification). Two parts, each reviewed before the next: 7A the backend, 7B the app.
+Finding people (user search) was proposed in the same breath and left for later.
+
+### 7A · Backend
+
+- [x] **Forgot password** `POST /auth/forgot-password`: emails a link to the app's `/reset-password?token=…&email=…`.
+  Always the same `200` answer, whether or not the address has an account; at most one email a minute per address
+  (Laravel's broker), which also answers the same. Address case and spaces do not matter.
+- [x] **Reset password** `POST /auth/reset-password` (token, email, new password twice): the token works once, for 60
+  minutes. A wrong, used or expired token and an unknown address all get the same `422` under `errors.token`.
+  - Signs out **every** device (all tokens revoked; their push subscriptions go with them through the existing
+    foreign key), since a reset may mean someone else had the password.
+  - Added: marks the address verified (the link reached the inbox); an earlier verification date is kept.
+- [x] **Change password** `PUT /me/password` (current password, new password twice): wrong current password `422`
+  under `errors.current_password`; the new one must differ. **This device stays signed in, every other device is
+  signed out.** 5 tries a minute, so a stolen token cannot guess the current password.
+- [x] Added: a **"Your password was changed"** email after a change or a reset, with a button to start a reset (so a
+  change the person did not make does not go unnoticed).
+- [x] **Email verification**: the link is emailed on registration (and again with
+  `POST /auth/email/verification-notification`, 6 an hour, nothing sent when verified already). It opens the app's
+  `/verify-email?id=…&hash=…&expires=…&signature=…`, which sends the values to
+  `POST /auth/email/verify/{id}/{hash}?expires=…&signature=…`.
+  - Works **signed out, on any device** (the signed link is the proof), for **a day** (`EMAIL_VERIFICATION_EXPIRE`).
+  - The signature covers the API path only (`signed:relative`), so it does not break when the app reaches the API
+    through another host name or a proxy.
+  - Refused (`403`) when changed, expired, or made for an address the account no longer has. The answer never
+    contains the profile.
+  - **Nothing requires a verified address** (a decision for you to confirm): the app works the same before, and
+    `email_verified_at` is only there for a reminder.
+- [x] All three emails are **queued** (the queue worker sends them), and their links open the app at `FRONTEND_URL`
+  (new `config/account.php`). Development uses the `log` mailer: the emails land in `storage/logs/laravel.log`.
+- [x] Rate limits: forgot + reset 5 a minute per IP address (shared), change 5 a minute, new verification email 6 an
+  hour, the verification link 20 a minute per IP address. `auth:clear-resets` scheduled daily.
+- [x] Docs: `docs/API.md` (the five endpoints with real answers and errors, the two app pages the emails open, the
+  rate limits, token revocation, `email_verified_at`), the Postman collection (5 requests), the README (an Email
+  settings section, the scheduled job, a security note, two deployment-checklist lines), `.env.example`.
+
+### Verification (7A)
+
+- Backend: `php artisan test` passes (**1292 tests**, 39 new), and Pint passes. The new tests cover every endpoint: the
+  link of each email, the same answer for unknown addresses, the one-a-minute rule, single use, the 60-minute and
+  one-day expiries, each tampered part of a verification link, another host name, every device signed out (push
+  subscriptions included) or every other device, the emails sent, the validation, and each rate limit.
+- **Live**, against the running API with the real queue worker sending the emails into the log: **22 checks pass**
+  (register, the verification email's link verifies the address signed out and twice, a changed signature is refused,
+  change password keeps this device and signs out the other, the "changed" email, forgot-password answers the same
+  for a stranger, the reset link resets once, every device signed out, old password refused, new one works).
+- Mutation checks: **39 behaviours were broken on purpose, one at a time, and a test failed for every one** (for
+  example: a reset or change leaving the other devices signed in, a change signing this device out too, the current
+  password not checked, the hash or the signature not checked, a signature that covers the host, the link going to the
+  API instead of the app, forgot-password telling an unknown address apart, a reset reported under the wrong field,
+  any of the emails not queued or not sent, each rate limit loosened).
+- Frontend: unchanged in 7A.
+
+### Backend notes from 7A
+
+- `POST /auth/register` still says when an address is taken (`422`), so registration can tell whether an address has
+  an account; forgot-password does not. Closing that would need a different sign-up flow (confirm the address first).
+- A device signed out by a password change keeps its open WebSocket until it reconnects (the next API call answers
+  `401`, which signs the app out).
+- Production needs a real mailer (`MAIL_MAILER=smtp`); with the default `log` nobody receives a reset link. The
+  production compose file does not require it, to keep deployments without email possible; the README's deployment
+  checklist says so.
+
+### 7B · App
+
+- [ ] Not started (waits for the review of 7A).

@@ -26,13 +26,14 @@ All routes are under `/api/v1`, for example `https://api.example.org/api/v1/chat
 
 ### 1.2 Authentication
 
-The API uses bearer tokens (Laravel Sanctum). Everything except `POST /auth/register`, `POST /auth/login`, the signed attachment URLs and the LiveKit webhook needs:
+The API uses bearer tokens (Laravel Sanctum). Everything except `POST /auth/register`, `POST /auth/login`, `POST /auth/forgot-password`, `POST /auth/reset-password`, the email verification link, the signed attachment URLs and the LiveKit webhook needs:
 
 ```
 Authorization: Bearer 1|Vb2xq9TnH7fKd4mYc8wZaLr3EoPj6UuS5iGtXe1N
 ```
 
 - `POST /auth/login` returns a token and when it stops working (`expires_at`). **A token lasts 30 days from the day it was issued and is not extended by using it.** After that every request answers `401`: discard the token and show the login screen.
+- Changing the password (`PUT /me/password`) revokes every token except the one that made the request; resetting it with an emailed link (`POST /auth/reset-password`) revokes all of them. A device that was signed out this way gets `401` on its next request.
 - Every login makes a separate token (name it with `device_name`), so a phone and a laptop never sign each other out. `POST /auth/logout` revokes only the token that made the request.
 - A `401` always means "this token is no longer valid" (missing, expired, revoked). A `403` means you are signed in but not allowed.
 - Signing out also stops push notifications on that browser (see [section 6](#6-guide-push-notifications)).
@@ -127,6 +128,10 @@ Limits are per signed-in user unless stated. A request over the limit gets `429`
 | Any signed-in request (backstop) | 300 / minute |
 | `POST /auth/login` | 5 / minute per email + IP address |
 | `POST /auth/register` | 20 / hour per IP address |
+| `POST /auth/forgot-password`, `POST /auth/reset-password` | 5 / minute per IP address, together (and at most one reset email a minute per address) |
+| `PUT /me/password` | 5 / minute |
+| `POST /auth/email/verification-notification` | 6 / hour |
+| `POST /auth/email/verify/{id}/{hash}` | 20 / minute per IP address |
 | `POST /chats/{chat}/messages` | 30 / minute |
 | `POST /chats/{chat}/calls` | 10 / minute |
 | `POST /calls/{call}/decline` | 30 / minute per IP address (it also works without a token) |
@@ -178,6 +183,7 @@ Returned by `/auth/*` and `/me*`. Contains private fields (email, phone, setting
 
 | Field | Notes |
 |---|---|
+| `email_verified_at` | When the person opened the link in the verification email (or reset their password with an emailed link), or `null`. Nothing in the API requires it; show a reminder while it is `null`. See [3.1](#31-authentication). |
 | `status` | `online`, `away`, `busy` or `offline`. Set by `POST /me/heartbeat`; falls back to `offline` when heartbeats stop. |
 | `last_seen_at` | Last heartbeat, or `null` |
 | `timezone` | IANA zone, default `Asia/Bangkok` |
@@ -545,7 +551,7 @@ Each endpoint lists who may call it, the request, and the response. "Members" me
 
 ### POST /auth/register
 
-Create an account. It does **not** sign the person in: call `POST /auth/login` next.
+Create an account. It does **not** sign the person in: call `POST /auth/login` next. It also emails a link to verify the address (see [POST /auth/email/verify/{id}/{hash}](#post-authemailverifyidhash)).
 
 **Auth:** none. **Limit:** 20 per hour per IP address.
 
@@ -629,6 +635,123 @@ Revoke the token used for this request (other devices stay signed in). Browser p
 
 **Response `200`:** `{ "message": "Logged out." }`
 
+#### Emails and the pages they open
+
+Three endpoints below send an email whose link opens a page **of the frontend**, at `FRONTEND_URL` (a server setting), never the API. The frontend must have these two pages:
+
+| Page | Link in the email | What the page does |
+|---|---|---|
+| `/reset-password` | `{FRONTEND_URL}/reset-password?token=…&email=…` | Asks for a new password (twice) and sends it with `token` and `email` to `POST /auth/reset-password` |
+| `/verify-email` | `{FRONTEND_URL}/verify-email?id=…&hash=…&expires=…&signature=…` | Sends the four values, unchanged, to `POST /auth/email/verify/{id}/{hash}?expires=…&signature=…` (signed in or not) |
+
+The emails are queued (the queue worker sends them), so a request that sends one answers at once. A third email, "Your password was changed", is sent after `PUT /me/password` and `POST /auth/reset-password`; its button opens `{FRONTEND_URL}/forgot-password`.
+
+### POST /auth/forgot-password
+
+"Forgot your password?" Emails a link to reset it, if an account uses the address.
+
+**Auth:** none. **Limit:** 5 per minute per IP address (shared with `POST /auth/reset-password`).
+
+| Field | Type | Rules |
+|---|---|---|
+| `email` | string | required, valid, max 255 (case and surrounding spaces do not matter) |
+
+**Response `200`**, always the same, so nobody can find out which addresses have accounts:
+
+```json
+{
+  "message": "If an account uses that address, we have emailed it a link to reset the password."
+}
+```
+
+At most one email a minute is sent to the same address; asking again sooner answers the same and sends nothing. The link works **once, for 60 minutes**.
+
+**Errors:** `422` when `email` is missing or not an address; `429` after too many requests.
+
+### POST /auth/reset-password
+
+Set a new password with the token from the emailed link. **Every device is signed out** (all tokens are revoked, and the push subscriptions made with them are removed): sign in again with the new password. The address counts as verified from now on (the link reached the inbox). The person gets a "Your password was changed" email.
+
+**Auth:** none. **Limit:** 5 per minute per IP address (shared with `POST /auth/forgot-password`).
+
+| Field | Type | Rules |
+|---|---|---|
+| `token` | string | required: the `token` from the link |
+| `email` | string | required: the `email` from the link |
+| `password` | string | required, min 8 characters |
+| `password_confirmation` | string | required, must match |
+
+**Response `200`:**
+
+```json
+{
+  "message": "Your password has been reset. Sign in with the new one."
+}
+```
+
+**Errors:** `422` with `errors.token` when the token is wrong, already used or older than 60 minutes, or the address has no account (one message for all of these):
+
+```json
+{
+  "message": "This password reset link is not valid or has expired. Ask for a new one.",
+  "errors": {
+    "token": [
+      "This password reset link is not valid or has expired. Ask for a new one."
+    ]
+  }
+}
+```
+
+`422` with `errors.password` for a short or unconfirmed password; `429` after too many requests.
+
+### POST /auth/email/verification-notification
+
+Email a new verification link (the first one is sent on registration). Does nothing when the address is verified already.
+
+**Auth:** bearer token. **Limit:** 6 per hour.
+
+**Response `200`:**
+
+```json
+{
+  "message": "We have emailed you a new verification link.",
+  "verified": false
+}
+```
+
+or, when there is nothing to do, `{ "message": "Your email address is already verified.", "verified": true }`: refresh the profile with `GET /me`.
+
+### POST /auth/email/verify/{id}/{hash}
+
+The link from the verification email. The frontend's `/verify-email` page calls it with the four values from the link: `id` and `hash` in the path, `expires` and `signature` as the query string, exactly as they came (add nothing else to the query string).
+
+```
+POST /auth/email/verify/0195e2c4-0001-7a00-8100-5f3a9c000000/7c4a8d09ca3762af61e59520943dc26494f8941b?expires=1773565200&signature=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+**Auth:** none: the signature is the proof, so it works on any device, signed in or not. It does not depend on the host name used to reach the API. **Limit:** 20 per minute per IP address.
+
+The link works for **a day** (`EMAIL_VERIFICATION_EXPIRE` on the server), and as often as it is opened.
+
+**Response `200`:**
+
+```json
+{
+  "message": "Your email address is verified.",
+  "verified": true
+}
+```
+
+or `{ "message": "Your email address is already verified.", "verified": true }` when it was. The response never contains the profile; a signed-in app refreshes it with `GET /me`.
+
+**Errors:** `403` when the link was changed, has expired, or was made for an address the account no longer has: offer to send a new one (`POST /auth/email/verification-notification`). `404` when the account no longer exists.
+
+```json
+{
+  "message": "Invalid signature."
+}
+```
+
 ### 3.2 Profile and presence
 
 ### GET /me
@@ -670,6 +793,28 @@ Email cannot be changed here.
 Upload a profile picture. `multipart/form-data` with one field, `avatar`: JPEG, PNG or WebP, at most 2 MB and 6000×6000 pixels (SVG is refused). The server keeps the original and makes a 256×256 WebP thumbnail.
 
 **Response `200`:** `{ "data": User }` with the new `avatar_url` and `avatar_thumb_url`.
+
+### PUT /me/password
+
+Change the password, knowing the current one. **This device stays signed in; every other device is signed out** (their tokens are revoked and their push subscriptions removed). The person gets a "Your password was changed" email.
+
+**Limit:** 5 per minute, so a stolen token cannot be used to guess the current password.
+
+| Field | Type | Rules |
+|---|---|---|
+| `current_password` | string | required |
+| `password` | string | required, min 8 characters, different from the current one |
+| `password_confirmation` | string | required, must match |
+
+**Response `200`:**
+
+```json
+{
+  "message": "Your password has been changed. Your other devices have been signed out."
+}
+```
+
+**Errors:** `422` with `errors.current_password` ("The current password is incorrect.") or `errors.password` ("The new password must be different from the current one.", too short, not confirmed); nothing changes. `429` after 5 tries in a minute.
 
 ### POST /me/heartbeat
 

@@ -94,6 +94,26 @@
     {
       "key": "nextUrl",
       "value": ""
+    },
+    {
+      "key": "resetToken",
+      "value": ""
+    },
+    {
+      "key": "verifyId",
+      "value": ""
+    },
+    {
+      "key": "verifyHash",
+      "value": ""
+    },
+    {
+      "key": "verifyExpires",
+      "value": ""
+    },
+    {
+      "key": "verifySignature",
+      "value": ""
     }
   ],
   "item": [
@@ -506,6 +526,151 @@
             "description": "Revokes this token only. Other devices stay signed in. After this, log in again."
           },
           "response": []
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Emails a link to reset the password, if an account uses the address. Always answers the same 200, so it never tells whether the address has an account. At most one email a minute per address. Limit: 5 a minute per IP address (shared with **Reset password**).\n\nWith `MAIL_MAILER=log` the email is written into `storage/logs/laravel.log`: copy `token` from the link into the `resetToken` variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Sets a new password with the token from the emailed link (works once, for 60 minutes). **Signs out every device**: log in again with the new password. A wrong or old token gives 422 with `errors.token`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"new-password\",\n  \"password_confirmation\": \"new-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send a new verification email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/email/verification-notification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "email",
+                "verification-notification"
+              ]
+            },
+            "description": "Emails a new link to verify the address (the first is sent on registration). Answers `verified: true` and sends nothing when it is verified already. Limit: 6 an hour."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify email (the link)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/email/verify/{{verifyId}}/{{verifyHash}}?expires={{verifyExpires}}&signature={{verifySignature}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "email",
+                "verify",
+                "{{verifyId}}",
+                "{{verifyHash}}"
+              ],
+              "query": [
+                {
+                  "key": "expires",
+                  "value": "{{verifyExpires}}"
+                },
+                {
+                  "key": "signature",
+                  "value": "{{verifySignature}}"
+                }
+              ]
+            },
+            "description": "What the app's `/verify-email` page sends. Copy `id`, `hash`, `expires` and `signature` from the link in the email (`storage/logs/laravel.log` with `MAIL_MAILER=log`) into the four `verify…` variables. Works without a token. 403 when the link was changed or is older than a day.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -601,6 +766,43 @@
                   "src": []
                 }
               ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "password"
+              ]
+            },
+            "description": "Changes the password, knowing the current one. This token keeps working; **every other device is signed out**. Wrong current password: 422 with `errors.current_password`. Limit: 5 a minute.\n\nThe demo accounts all use `password`: change the `password` variable afterwards, or change it back.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"password\": \"new-password\",\n  \"password_confirmation\": \"new-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "response": []
