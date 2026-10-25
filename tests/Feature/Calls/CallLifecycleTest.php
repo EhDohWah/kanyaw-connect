@@ -288,14 +288,17 @@ describe('the stale cleanup (rooms:end-stale)', function () {
     });
 
     it('leaves the room of a call that is going on to the call rules', function () {
-        // By the room rules alone this room would be "empty for an hour"; it is the call's to end.
-        $call = makeCall($this->caller, $this->callee, ['status' => 'ongoing', 'answered_at' => now()->subHours(2)]);
-        RoomParticipant::where('room_id', $call->room_id)->update(['joined_at' => ts(now()->subHours(2))]);
-        $call->room->update(['status' => RoomStatus::Active, 'started_at' => now()->subHours(2)]);
-        RoomParticipant::where('room_id', $call->room_id)->update(['left_at' => null]);
-        $call->room->forceFill(['created_at' => now()->subDays(2)])->save();
+        // The caller joined while it rang, so the room started just over 24 hours ago: by the room rules
+        // alone it has run too long. The call was answered just under 24 hours ago and both are still
+        // connected, so the call is fine, and its room must not be ended from under it.
+        $call = makeCall($this->caller, $this->callee, ['status' => 'ongoing', 'answered_at' => now()->subHours(24)->addMinute()]);
+        $call->room->update(['status' => RoomStatus::Active, 'started_at' => now()->subHours(24)->subMinute()]);
+        RoomParticipant::where('room_id', $call->room_id)->update(['joined_at' => ts(now()->subHours(24)->subMinute())]);
 
-        $this->artisan('rooms:end-stale')->expectsOutput('Ended 0 room(s) nobody joined, 0 empty and 0 running too long.')->assertSuccessful();
+        $this->artisan('rooms:end-stale')
+            ->expectsOutput('Ended 0 call(s) that rang out unanswered and 0 whose connection was lost.')
+            ->expectsOutput('Ended 0 room(s) nobody joined, 0 empty and 0 running too long.')
+            ->assertSuccessful();
 
         expect($call->fresh()->status)->toBe(CallStatus::Ongoing)
             ->and($call->room->fresh()->status)->toBe(RoomStatus::Active);

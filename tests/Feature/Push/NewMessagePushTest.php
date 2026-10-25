@@ -446,6 +446,26 @@ describe('the retry job', function () {
         expect($this->push->sent)->toHaveCount(1)->and($this->push->sent[0]['payload'])->toBe(['body' => 'Hi']);
     });
 
+    it('sends with the TTL and urgency it was given', function () {
+        $subscription = PushSubscription::factory()->create();
+
+        (new RetryWebPush($subscription->id, ['body' => 'Hi'], ['ttl' => 60, 'urgency' => 'normal']))->handle(app(DeliverPush::class));
+
+        expect($this->push->sent[0]['options'])->toBe(['ttl' => 60, 'urgency' => 'normal']);
+    });
+
+    it('still runs if it was queued before jobs carried options (after an update)', function () {
+        $subscription = PushSubscription::factory()->create();
+        // A job serialized by the previous version has no `options`, like an instance made without its constructor.
+        $old = (new ReflectionClass(RetryWebPush::class))->newInstanceWithoutConstructor();
+        $old->subscriptionId = $subscription->id;
+        $old->payload = ['body' => 'Hi'];
+
+        $old->handle(app(DeliverPush::class));
+
+        expect($this->push->sent[0]['options'])->toBe([]);
+    });
+
     it('fails again (so the queue backs off and retries) while the push service is unavailable', function () {
         $subscription = PushSubscription::factory()->create();
         $this->push->outcomes[$subscription->endpoint] = PushOutcome::Failed;

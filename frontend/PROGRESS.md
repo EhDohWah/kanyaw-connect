@@ -11,7 +11,7 @@ item they belong to.
 | 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), approved |
 | 4. Video | Done, approved |
 | 5. Push and polish | Done, approved |
-| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done, waiting for review; 6B and 6C not started |
+| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done; 6B done, waiting for review; 6C not started |
 
 ## Phase 1: Foundation
 
@@ -837,7 +837,112 @@ Frontend:
 
 ### 6B · Calls backend
 
-- [ ] Not started (waits for the review of 6A).
+A call is a `calls` row (the ringing) plus an ordinary two-seat room on the direct chat, so joining, LiveKit tokens and
+the webhook are the existing room code. Everything is in `docs/API.md` (the Call object, section 3.9, the five events,
+and the guide in section 8), which is now the contract 6C builds on.
+
+- [x] **Table and model**: `calls` exactly as asked (plus a unique `room_id` and an index on `chat_id`), `Call` with
+  the `CallKind`, `CallStatus` and `CallEndReason` enums, `CallResource` with `duration_seconds` (`null` until a call
+  that was answered ends), `config/calls.php` with `ring_seconds` (45, `CALL_RING_SECONDS`) and
+  `reconnect_grace_seconds` (30, `CALL_RECONNECT_GRACE`), both in the README and `.env.example`.
+- [x] **`POST /chats/{chat}/calls`**: direct chats only (`403` for a group), the room as asked (instant, linked, two
+  seats, no password or waiting room, caller host, callee admitted), no `room_created` message, no audit entry, `201`.
+  `409 already_in_call` / `callee_busy`; 10 a minute. Both people's user rows are locked (in id order) before the busy
+  checks, so two simultaneous starts can never both get through.
+  - Added: a call that rang out but was not yet marked missed (the queue worker running late) is settled first, so it
+    does not make anyone look busy. `GET /calls/current` does the same, so it never shows a rung-out call as ringing.
+  - Allowed in end-to-end encrypted direct chats too (WebRTC encrypts the media in transit either way; the server only
+    learns who called whom, which it knows anyway). Documented.
+- [x] **`GET /calls/current`, `GET /calls/{call}`**: others get `404` with the same body as an id that does not exist.
+- [x] **Accept, decline, cancel, end**, each repeatable (`200` with the call), each refusing with the call in the body:
+  `409 call_not_ringing` for accept/decline/cancel, and a new code **`409 call_not_ongoing`** for ending a call that was
+  never answered (the prompt names no code for that case). A ringing call whose time is up is a missed call whatever
+  is asked of it (an accept one second late is refused and records the miss).
+  - Cancelling a call that already rang out counts as "already happened" (`200`, `end_reason` stays `no_answer`);
+    ending a call that was ended by a lost connection likewise.
+- [x] **Signed decline** for the service worker: the same route, outside the bearer-token group; a URL signed until
+  `ring_expires_at` stands for the callee. Expired, changed (another call, a later expiry, the signature) → `403`. 30 a
+  minute per IP address, since it works without a token.
+- [x] **Ringing timeout**: `ExpireRingingCall`, dispatched with a delay until `ring_expires_at`; does nothing if it runs
+  early or the call moved on.
+- [x] **Room rules**: the caller may join while ringing, both once answered, otherwise `409 room_ended` (the callee who
+  has not answered gets "Answer the call before joining it."); a voice call's token has
+  `canPublishSources: ["microphone"]`; call rooms are left out of `GET /rooms` (every filter) and write no audit entries.
+  - Added: **neither person gets LiveKit admin rights** in a call (the caller is the room's host, and a host's token
+    could mute or remove the other person through LiveKit's API), and the room has **no host controls** in the API
+    (lock, end, admit, deny, remove, mute, co-hosts and the audit log answer `403`, "Use the call endpoints instead"), so
+    a call and its room can never disagree. No host transfer when the caller drops out.
+- [x] **Webhook**: `room_finished` ends an answered call (`connection_lost`), even if nobody had connected yet.
+  `participant_left` during an answered call starts the reconnect grace: `EndCallAfterGrace` checks after 30 s whether
+  the person is still gone (it does nothing if they came back, if the call ended meanwhile, or if they dropped out again
+  later, which has its own timer). Leaving while it still rings does nothing.
+- [x] **Stale cleanup** (`rooms:end-stale`): marks rung-out calls missed, and ends answered calls whose room ended, where
+  someone has been gone longer than the grace (or never connected within the seat-hold time after answering), or that
+  have lasted over 24 hours. The room rules leave the rooms of active calls to it.
+- [x] **Events** `call.incoming` (callee only), `call.accepted`, `call.declined`, `call.missed`, `call.ended` on both
+  people's `private-user` channels, payload `{ call }`, sent after the transaction commits.
+- [x] **System message** for every ended, declined or missed call, with the metadata asked for, broadcast as
+  `message.sent`: "Missed voice call", "Video call declined", "Video call · 3:12" (hours past an hour). A missed call
+  counts toward the callee's `unread_count` (not the caller's); other system messages still do not.
+- [x] **Push**: `call.incoming` to every browser of the callee, ignoring the heartbeat rule and the mute, `urgency:
+  high`, TTL = the seconds left, never retried, and not sent at all if the call stopped ringing while it waited in the
+  queue; the payload exactly as asked, with the signed `decline_url`. `call.missed` to the callee under the normal rules.
+  No separate "new message" push for the summary message.
+  - To do this, a push can now carry its own TTL and urgency (`WebPushService::send($sub, $payload, $options)`), and the
+    push channel takes any notification that implements `WebPushMessage`, not only new messages.
+- [x] **Tests**: every endpoint (happy path, `401`, `403`, every `409`), concurrency, the signed URL (valid, expired,
+  tampered), the voice-only token, the rooms-list exclusion, the unread count, the timeout and the grace (below).
+- [x] **Docs**: `docs/API.md` (Call object; section 3.9 Calls with every endpoint, recorded examples and errors; the four
+  new error codes and two rate limits; the five events; section 8 "Guide: calls" with the flow and both push payloads;
+  limits and enums; notes in the rooms, room controls, webhook, channels, Message and Chat sections). The Postman
+  collection has a Calls folder (8 requests). README: the new settings, the cleanup job and the queue worker.
+
+### Verification (6B)
+
+- Backend: `php artisan test` passes (**1251 tests**, 163 new: every call endpoint with its happy path, `401`, `403` and each
+  `409`; the signed decline link valid, expired and tampered three ways; join gating, the voice-only token, no LiveKit admin,
+  the rooms list, the blocked host controls; `room_finished`, the reconnect grace (including a drop, a return and a second
+  drop); the ringing timeout; the stale cleanup; the summary messages; the unread count; both pushes with their TTL, urgency
+  and rules), and Pint passes. CI is green on the commit.
+- **Real concurrency** (`tests/Integration/CallConcurrencyTest.php`, separate processes with their own database
+  connections firing at the same instant): two people calling each other at once (3 rounds), four people calling the same
+  person at once, and accept against decline of the same call (4 rounds). Exactly one wins every time, and a declined call
+  leaves exactly one summary message.
+- Frontend: unchanged in 6B; `npm run build`, `npm run type-check` and `npm run test` pass (**1236 tests in 85 files**).
+- Mutation checks: **78 behaviours were broken on purpose, one at a time, and a test failed for 77** (for example: no lock
+  on the two people or on the call, either busy check skipped, a rung-out call making someone look busy, a 50-seat room,
+  the callee left waiting, no `call.incoming`, no timeout job, finishing a call twice, a late answer accepted, the room not
+  closed, LiveKit being down breaking a decline, any of the four answers not repeatable, the caller allowed to answer,
+  strangers seeing calls or getting `403` instead of `404`, the signature not checked, the callee joining while it rings, a
+  voice token that can publish the camera, the caller as LiveKit admin, call rooms in `GET /rooms`, host controls on call
+  rooms, `room_finished` or the grace ignored, a return ignored, the cleanup ignoring the grace or ended rooms, every call
+  message counted as unread or a missed call counted for the caller, the incoming push living a day, being retried, or sent
+  after the call stopped ringing, the missed push sent to an open app or a muted chat, per-push TTL ignored, the duration
+  counted from the start, a `409` without the call). The first run had three survivors: the grace setting was only ever
+  tested at its default (a test with 45 s added), and the cleanup test's room did not actually meet a room rule (rewritten
+  so it does). The one left is equivalent: the grace job's own "is it still going on" check repeats a check the shared
+  finish step makes anyway, so no test can tell them apart.
+
+### Real problems found while building 6B (all fixed)
+
+1. The race test's processes garbled each other's database connection: a model made in the parent remembers the parent's
+   connection, so a child using it wrote on the parent's socket. The children now load what they need by id.
+2. A stranger asking for a call got Laravel's "Not Found", while an unknown id gets "Not found.", which told them the
+   call exists. Both are now the same.
+3. A retry job queued before this update would have had no `options` and failed when the worker picked it up after the
+   deploy; `options` is now a plain property with a default (tested).
+
+### Backend notes for 6C
+
+- Accept is repeatable, as asked, so a callee who taps Accept on two devices at the same moment gets `200` on both, and the
+  second device to connect to LiveKit pushes the first one out (one identity per person). Only the device that tapped
+  Accept should join; the others stop ringing on `call.accepted`. (The device that answered does not get `call.accepted`
+  itself when it sends `X-Socket-ID`: it has the response.)
+- `decline_url` is an absolute API URL: the service worker `POST`s it cross-origin, which the CORS settings already allow
+  for the frontend's origin (no custom headers are needed).
+- The incoming-call push goes to every browser even while the app is open; the service worker should not show it when a
+  window of the app is visible (the app rings from `call.incoming` instead).
+- There is no list of past calls: the summary messages in each chat are the history.
 
 ### 6C · Calls in the app
 

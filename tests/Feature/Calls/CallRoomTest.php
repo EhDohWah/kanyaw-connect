@@ -284,6 +284,15 @@ describe('the reconnect grace', function () {
             && abs(now()->addSeconds(30)->diffInSeconds($job->delay)) <= 1);
     });
 
+    it('waits as long as calls.reconnect_grace_seconds says', function () {
+        config(['calls.reconnect_grace_seconds' => 45]);
+        Queue::fake([EndCallAfterGrace::class]);
+
+        sendLiveKitWebhook($this, livekitEvent($this->call->room, 'participant_left', $this->callee))->assertOk();
+
+        Queue::assertPushed(EndCallAfterGrace::class, fn (EndCallAfterGrace $job) => abs(now()->addSeconds(45)->diffInSeconds($job->delay)) <= 1);
+    });
+
     it('ends the call at once with a grace of 0', function () {
         config(['calls.reconnect_grace_seconds' => 0]);
 

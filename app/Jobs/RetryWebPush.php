@@ -22,10 +22,21 @@ class RetryWebPush implements ShouldQueue
     public int $tries = 3;
 
     /**
+     * TTL and urgency for this push (see WebPushService::send). A plain property with a default, not a
+     * promoted one, so a job queued before it existed still has it when the worker picks it up.
+     *
+     * @var array{ttl?: int, urgency?: string}
+     */
+    public array $options = [];
+
+    /**
      * @param  array<string, mixed>  $payload
      * @param  array{ttl?: int, urgency?: string}  $options
      */
-    public function __construct(public string $subscriptionId, public array $payload, public array $options = []) {}
+    public function __construct(public string $subscriptionId, public array $payload, array $options = [])
+    {
+        $this->options = $options;
+    }
 
     /**
      * @return list<int>
