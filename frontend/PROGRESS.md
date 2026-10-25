@@ -814,7 +814,14 @@ Frontend:
   storing Chrome's own recording as audio, the voice message with its length and waveform, the other person playing it with
   byte ranges, nothing downloaded before play, speed, the slider, one at a time, the microphone off after every path, too
   short, delete, a blocked microphone, axe on the bar, the preview and the bubble, and a 390 px phone).
-- Mutation checks: running; the result follows in the next commit.
+- Mutation checks: **44 behaviours were broken on purpose, one at a time (33 in the app, 11 on the server), and a test
+  failed each time** (for example: WebM tried before MP4, no 32 kbps limit, a stereo microphone, the codec left in the
+  file's type, a pause counted in the length, a recording under a second sent, no stop at five minutes, the microphone kept
+  on until the recorder finished, an interruption losing the recording, a retry uploading again, two voice messages
+  playing at once, Chrome's "Infinity" taken as the length, an expired link played as it is; on the server: no relabel,
+  a relabel whatever was declared or of any type, the hints on every message type or in encrypted chats, a length sent as
+  text, a 1-bar waveform, no byte ranges). One broke nothing at first: not going back to the start when a voice message
+  ends, because the test never moved the position; it now plays to the end first.
 
 ### Real problems found while building 6A (all fixed)
 

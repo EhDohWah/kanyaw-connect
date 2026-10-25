@@ -170,10 +170,15 @@ describe('VoicePlayer', () => {
   it('back at the start when it ends', async () => {
     const wrapper = player()
     await playButton(wrapper).trigger('click')
+    Object.defineProperty(audioOf(wrapper), 'currentTime', { value: 30, configurable: true, writable: true })
+    await wrapper.get('audio').trigger('timeupdate')
+    expect(wrapper.findAll('[role=slider] span.bg-primary')).toHaveLength(48)
     await wrapper.get('audio').trigger('ended')
 
     expect(playButton(wrapper).attributes('aria-label')).toBe('Play voice message')
     expect(useVoicePlaybackStore().playing).toBeNull()
+    expect(slider(wrapper).attributes('aria-valuenow')).toBe('0')
+    expect(wrapper.findAll('[role=slider] span.bg-primary')).toHaveLength(0)
     expect(wrapper.text()).toContain('0:30')
   })
 
