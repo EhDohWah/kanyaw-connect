@@ -12,7 +12,7 @@ item they belong to.
 | 4. Video | Done, approved |
 | 5. Push and polish | Done, approved |
 | 6. Voice messages and one-to-one calls (Phase 6 prompt) | Done, approved |
-| 7. Account basics (no prompt; scope agreed in chat) | 7A (backend) done, waiting for review; 7B (app) not started |
+| 7. Account basics (no prompt; scope agreed in chat) | 7A (backend) done; 7B (app) done, waiting for review |
 
 ## Phase 1: Foundation
 
@@ -1114,4 +1114,65 @@ Finding people (user search) was proposed in the same breath and left for later.
 
 ### 7B · App
 
-- [ ] Not started (waits for the review of 7A).
+- [x] **Forgot password**: "Forgot your password?" under the password on the sign-in page, carrying the address typed
+  so far, opens `/forgot-password`. It sends the address and then says "If an account uses …, a link … is on its way.
+  It works for 60 minutes." whatever the server knows (it answers the same too), with a hint about spam and a way to
+  ask again. A malformed address and a `429` are shown.
+- [x] **Reset password** `/reset-password?token=…&email=…`: the token and the address are read once and **taken out
+  of the address bar at once** (so the token is not left in the history or sent to other sites as the referrer). New
+  password twice (8 characters, checked before sending). After it works: "Every device has been signed out, this one
+  too", the session here is cleared, and "Sign in" opens the sign-in page with the address filled in. A used or
+  expired link says so, with "Ask for a new link" for the same address; a link missing its token says so without
+  asking the server.
+- [x] **Verify email** `/verify-email?id=…&hash=…&expires=…&signature=…`: sends the four values at once, unchanged,
+  and clears them from the address bar. Works signed in or not. Verified: signed in, the profile is loaded again and
+  "Continue"; signed out, "Sign in". Expired or changed: signed in, "Send a new link" right there; signed out, "Sign in
+  to get a new link". Account gone and no connection (with "Try again") have their own words.
+- [x] **The reminder** at the top of the app while the address is not verified: "Please verify your email address:
+  we sent a link to …", **Send again** ("Sent. Check your inbox."; already verified meanwhile: the profile is loaded
+  again and it goes away; `429` shows the wait), and a close button that hides it for the session, for that person
+  only. Not inside a conversation or a call. Coming back to the tab loads the profile again (at most every 30 s), so
+  a verification made on the phone clears it on the laptop.
+- [x] **Settings → Password**: current, new, confirm (checked before sending; the server's field errors under each
+  field); after it works the form empties and says the other devices were signed out (this one stays).
+  **Settings → Account** says whether the email is verified, with "Send verification email" while it is not.
+- [x] Sign-in fills in `?email=` (coming back from a reset). Password managers get the account's address on the reset
+  and change-password forms (a hidden `username` field).
+- [x] The three pages are open signed in or not (a link may be opened on any device), and none of them asks the server
+  anything before showing.
+- [x] Texts in `en.json` (`account.*`, `settings.password.*`, `settings.email.*`), `my.json` and `ksw.json` synced.
+
+Deviations:
+
+- Nothing requires a verified address (as decided in 7A): the reminder can be hidden, and the app works the same.
+
+### Verification (7B)
+
+- Frontend: `npm run build`, `npm run type-check` and `npm run test` pass: **1465 tests in 99 files** (1415 before 7B).
+- **Real Chromium against the running API, with the queue worker writing the emails into the log: 30 checks pass**
+  with no console problems: register, the reminder with the address, "Send again" sends another email, a changed
+  verification link refused, the real link verifies on a phone that is not signed in (its values gone from the address
+  bar), the reminder gone back on the laptop and Settings saying "Email verified"; a wrong current password on its
+  field, the change emptying the form, the "changed" email, this device still signed in and the other sent to sign in
+  ("Your session has ended"); "Forgot your password?" carrying the address, the confirmation, the reset email's link,
+  the token gone from the address bar, the new password, "Sign in" with the address filled in, the new password
+  signing in, the same link refused the second time; axe on the home page with the reminder, the verify, forgot and
+  reset pages and Settings; no sideways scroll at 390 px on the three pages.
+- Mutation checks: **41 behaviours were broken on purpose, one at a time, and a test now fails for 40** (for example:
+  a public request sending the token, the verify link's query changed, the token or the link left in the address bar,
+  this device left signed in after a reset, a short or mismatched password sent, a used link shown as a form error,
+  the reminder shown when verified or inside a conversation, "Hide" forgotten or hiding it for everyone, no recheck
+  or a recheck on every return, the form not emptied, the forgot link dropping the address, the reset or verify page
+  closed to someone signed in or out). The first run left 3: two were gaps in the tests, now filled (a malformed
+  address must be shown on the field; the profile must be reloaded after verifying, which the old test could not tell
+  from the first load). The one left is equivalent: trimming the address on the forgot page, which the browser already
+  does for an email field.
+
+### Real problems found while building 7B (all fixed)
+
+1. After a successful reset the page offered both "Sign in" and "Back to sign in" (the browser run found it: two links
+   to the same place). "Back to sign in" is gone once the reset worked.
+
+### Backend notes from 7B
+
+- None new. The emails' links depend on the server's `FRONTEND_URL` being this app's address.

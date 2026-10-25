@@ -11,6 +11,7 @@ import ChatDrawer from '@/components/layout/ChatDrawer.vue'
 import CreateMenu from '@/components/layout/CreateMenu.vue'
 import RightSidebar from '@/components/layout/RightSidebar.vue'
 import SideNav from '@/components/layout/SideNav.vue'
+import VerifyEmailBanner from '@/components/layout/VerifyEmailBanner.vue'
 import { useHeartbeat } from '@/composables/useHeartbeat'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useMessagingSession } from '@/composables/useMessagingSession'
@@ -67,6 +68,9 @@ async function retry(): Promise<void> {
         <WifiOff class="size-4 shrink-0" aria-hidden="true" />
         {{ connection.browserOnline ? t('shell.reconnecting') : t('shell.offline') }}
       </div>
+
+      <!-- Not inside a conversation or a call, where every line of the screen counts. -->
+      <VerifyEmailBanner v-if="!route.meta.immersive" />
 
       <template v-if="auth.bootError">
         <h1 class="sr-only">{{ t('app.name') }}</h1>

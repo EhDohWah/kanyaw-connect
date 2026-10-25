@@ -96,7 +96,7 @@ describe('SettingsView: account', () => {
     useFakePush()
     const { wrapper } = await open()
 
-    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Notifications', 'Calls', 'Meetings', 'Account'])
+    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Notifications', 'Calls', 'Meetings', 'Password', 'Account'])
     for (const each of wrapper.findAll('section')) {
       expect(each.attributes('aria-labelledby')).toBe(each.get('h2').attributes('id'))
     }
@@ -263,7 +263,7 @@ describe('SettingsView: notifications', () => {
     const { wrapper } = await open()
 
     expect(section(wrapper, 'Notifications')).toBeUndefined()
-    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Calls', 'Meetings', 'Account'])
+    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Calls', 'Meetings', 'Password', 'Account'])
   })
 })
 
@@ -344,5 +344,102 @@ describe('SettingsView: calls', () => {
 
     expect(section(wrapper, 'Calls')!.findAll('[role=switch]')[0]!.attributes('aria-checked')).toBe('true')
     expect(section(wrapper, 'Calls')!.find('[role=alert]').exists()).toBe(true)
+  })
+})
+
+describe('SettingsView: password', () => {
+  async function fill(wrapper: Awaited<ReturnType<typeof open>>['wrapper'], current: string, password: string, confirmation = password) {
+    const form = section(wrapper, 'Password')!
+    await form.get('input[name=current_password]').setValue(current)
+    await form.get('input[name=password]').setValue(password)
+    await form.get('input[name=password_confirmation]').setValue(confirmation)
+    await form.get('form').trigger('submit')
+    await settle()
+  }
+
+  it('changes the password with the current one, says the other devices were signed out, and empties the form', async () => {
+    server.fail['put /me/password'] = { data: { message: 'Your password has been changed. Your other devices have been signed out.' } }
+    const { wrapper, calls } = await open()
+
+    await fill(wrapper, 'old-password', 'brand-new-password')
+
+    expect(calls.find((c) => c.method === 'put' && c.url === '/me/password')?.body).toEqual({
+      current_password: 'old-password',
+      password: 'brand-new-password',
+      password_confirmation: 'brand-new-password',
+    })
+    const form = section(wrapper, 'Password')!
+    expect(form.find('[role=status]').text()).toBe('Your password has been changed. Your other devices have been signed out.')
+    expect(form.findAll('input[type=password]').map((input) => (input.element as HTMLInputElement).value)).toEqual(['', '', ''])
+    expect(useAuthStore().isAuthenticated).toBe(true) // this device stays signed in
+  })
+
+  it('a wrong current password: shown on that field, and nothing is emptied', async () => {
+    server.fail['put /me/password'] = {
+      status: 422,
+      data: { message: 'The current password is incorrect.', errors: { current_password: ['The current password is incorrect.'] } },
+    }
+    const { wrapper } = await open()
+
+    await fill(wrapper, 'wrong-password', 'brand-new-password')
+
+    const field = section(wrapper, 'Password')!.get('input[name=current_password]')
+    expect(field.attributes('aria-invalid')).toBe('true')
+    expect(section(wrapper, 'Password')!.text()).toContain('The current password is incorrect.')
+    expect((section(wrapper, 'Password')!.get('input[name=password]').element as HTMLInputElement).value).toBe('brand-new-password')
+  })
+
+  it('checks before sending: the current password, 8 characters, typed twice the same', async () => {
+    const { wrapper, calls } = await open()
+
+    await fill(wrapper, '', 'short', 'other')
+
+    const text = section(wrapper, 'Password')!.text()
+    expect(text).toContain('Enter your current password.')
+    expect(text).toContain('Use at least 8 characters.')
+    expect(text).toContain('The passwords do not match.')
+    expect(calls.some((c) => c.url === '/me/password')).toBe(false)
+  })
+
+  it('too many tries: says how long to wait', async () => {
+    server.fail['put /me/password'] = { status: 429, headers: { 'retry-after': '55' }, data: { message: 'Too Many Attempts.' } }
+    const { wrapper } = await open()
+    await fill(wrapper, 'old-password', 'brand-new-password')
+    expect(section(wrapper, 'Password')!.find('[role=alert]').text()).toBe('Too many requests. Please wait 55 seconds and try again.')
+  })
+})
+
+describe('SettingsView: email verification', () => {
+  it('says the address is verified, with nothing to do', async () => {
+    server.user = makeUser({ email_verified_at: '2026-03-14T09:00:00.000000Z' })
+    const { wrapper } = await open()
+    expect(section(wrapper, 'Account')!.text()).toContain('Email verified')
+    expect(section(wrapper, 'Account')!.findAll('button').map((b) => b.text())).not.toContain('Send verification email')
+  })
+
+  it('not verified: says so, and sends a link on request', async () => {
+    server.user = makeUser({ email: 'eh@example.org', email_verified_at: null })
+    server.fail['post /auth/email/verification-notification'] = { data: { message: 'We have emailed you a new verification link.', verified: false } }
+    const { wrapper, calls } = await open()
+    const account = () => section(wrapper, 'Account')!
+
+    expect(account().text()).toContain('Email not verified yet')
+    await account().findAll('button').find((b) => b.text() === 'Send verification email')!.trigger('click')
+    await settle()
+
+    expect(calls.some((c) => c.method === 'post' && c.url === '/auth/email/verification-notification')).toBe(true)
+    expect(account().find('[role=status]').text()).toBe('A link is on its way to eh@example.org.')
+  })
+
+  it('verified meanwhile: the profile is loaded again and the status changes', async () => {
+    server.user = makeUser({ email_verified_at: null })
+    server.fail['post /auth/email/verification-notification'] = { data: { message: 'Your email address is already verified.', verified: true } }
+    const { wrapper } = await open()
+    server.user = { ...server.user, email_verified_at: '2026-03-14T09:00:00.000000Z' }
+
+    await section(wrapper, 'Account')!.findAll('button').find((b) => b.text() === 'Send verification email')!.trigger('click')
+    await settle()
+
+    expect(section(wrapper, 'Account')!.text()).toContain('Email verified')
   })
 })

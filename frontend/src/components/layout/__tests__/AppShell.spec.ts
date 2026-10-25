@@ -66,6 +66,20 @@ describe('AppShell', () => {
     expect(conversation.wrapper.find('nav.fixed').exists()).toBe(false)
   })
 
+  it('reminds an unverified person to verify their email, but not inside a conversation', async () => {
+    fakeApi((call) => {
+      if (call.url === '/me' && call.method === 'get') return { data: { data: makeUser({ email_verified_at: null }) } }
+      if (call.url === '/chats' && call.method === 'get') return { data: page([]) }
+      return { status: 204 }
+    })
+    const list = await open('/chats')
+    expect(list.wrapper.find('[role=region][aria-label="Verify your email"]').exists()).toBe(true)
+    list.wrapper.unmount()
+
+    const conversation = await open('/chats/0195e2c4-0001-7a00-8100-5f3a9c000000')
+    expect(conversation.wrapper.find('[role=region][aria-label="Verify your email"]').exists()).toBe(false)
+  })
+
   it('has no Settings link in the bottom bar (it is reached from Profile), but the other four places', async () => {
     serve()
     const { wrapper } = await open('/')

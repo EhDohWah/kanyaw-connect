@@ -89,6 +89,17 @@ export const useAuthStore = defineStore('auth', () => {
     return bootPromise
   }
 
+  /** Loads the profile again (after verifying the email address, say). A failure keeps the one we have. */
+  async function refreshUser(): Promise<void> {
+    if (!token.value) return
+    try {
+      const me = await meApi.getMe()
+      if (token.value) applyUser(me)
+    } catch {
+      // a 401 has signed the session out already; anything else: try again later
+    }
+  }
+
   async function login(email: string, password: string): Promise<void> {
     const result = await authApi.login(email.trim(), password, describeDevice())
     saveSession(result.token, result.expires_at)
@@ -173,6 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
     restoreSession,
     clearSession,
     ensureUser,
+    refreshUser,
     login,
     register,
     logout,

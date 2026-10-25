@@ -128,6 +128,21 @@ the `Authorization` header, and never logged. When the server says the token is 
 login screen with the reason, and returns to the page they were on after signing in again. Signing out revokes this
 device's token on the server.
 
+**Passwords and email** (the server sends the emails; their links open pages of this app, so the server's `FRONTEND_URL`
+must be this app's address):
+
+- **Forgot your password?** on the sign-in page (it carries the address typed so far) opens `/forgot-password`. The
+  page says the same whether or not the address has an account. The email links to `/reset-password?token=…&email=…`:
+  the token is taken out of the address bar at once, so it does not stay in the history or reach other sites. A reset
+  signs out every device, this one too, and "Sign in" fills in the address.
+- **Settings → Password**: change it with the current one; your other devices are signed out, this one stays.
+- **Verify your email**: the link from the email opens `/verify-email`, which works signed in or not, on any device.
+  Until the address is verified a reminder sits at the top of the app (not inside a conversation or a call), with
+  **Send again**; it can be hidden for the session, and Settings → Account keeps the button. Nothing in the app waits
+  for verification. The reminder notices a verification made on another device when you come back to the tab.
+- Developing locally, the server writes the emails into its `storage/logs/laravel.log` (`MAIL_MAILER=log`): copy the
+  link from there.
+
 ## Video meetings
 
 Meetings use the API for who may join, and a LiveKit server for the video; the API sends the LiveKit address and a
@@ -246,7 +261,6 @@ These parts of the product have no backend yet, or are not built yet:
 | Chats and messages | Connected (Phase 2; voice messages Phase 6A). Not built: "seen by", encrypted chats (read-only notice) |
 | Meetings and video | Connected (Phase 4). The in-call chat goes over LiveKit (the API has no endpoint for it) and is not saved: it is gone when the meeting ends, and the chat says so. No recording. One-to-one calls with ringing are built (Phase 6C; see Calls above) |
 | Push notifications | Connected (Phase 5). The text is the server's, in English |
-| "Forgot password", changing the password, email verification | The backend has no endpoints |
 | Finding people you share no chat with | The backend has no user search |
 | Group photos, muting, archiving, pinning chats | The backend has no endpoints to change them. The app shows the state (pinned first, muted grey) but has no controls |
 | Editing or cancelling a scheduled meeting | The backend can only end it |

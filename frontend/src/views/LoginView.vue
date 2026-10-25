@@ -16,7 +16,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const email = ref('')
+// Filled in when coming back from a password reset.
+const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
 const password = ref('')
 const submitting = ref(false)
 const formError = ref('')
@@ -91,6 +92,12 @@ async function submit(): Promise<void> {
         autocomplete="current-password"
         required
       />
+      <RouterLink
+        :to="{ name: 'forgot-password', query: email.trim() ? { email: email.trim() } : {} }"
+        class="-my-2 inline-flex min-h-11 items-center self-end text-sm font-medium text-primary underline underline-offset-2 hover:text-primary-hover"
+      >
+        {{ t('account.forgot.link') }}
+      </RouterLink>
 
       <BaseButton type="submit" size="lg" block :loading="submitting">
         {{ submitting ? t('auth.signingIn') : t('auth.signIn') }}

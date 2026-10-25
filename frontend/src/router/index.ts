@@ -32,6 +32,25 @@ export function createAppRouter(history: RouterHistory = createWebHistory(import
         component: () => import('@/views/RegisterView.vue'),
         meta: { guestOnly: true, titleKey: 'auth.signUp' },
       },
+      // The pages the account emails link to: open signed in or not (a link may be opened on another device).
+      {
+        path: '/forgot-password',
+        name: 'forgot-password',
+        component: () => import('@/views/ForgotPasswordView.vue'),
+        meta: { titleKey: 'account.forgot.title' },
+      },
+      {
+        path: '/reset-password',
+        name: 'reset-password',
+        component: () => import('@/views/ResetPasswordView.vue'),
+        meta: { titleKey: 'account.reset.title' },
+      },
+      {
+        path: '/verify-email',
+        name: 'verify-email',
+        component: () => import('@/views/VerifyEmailView.vue'),
+        meta: { titleKey: 'account.verify.title' },
+      },
       {
         path: '/',
         component: () => import('@/components/layout/AppShell.vue'),

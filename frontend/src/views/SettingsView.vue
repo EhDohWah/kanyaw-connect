@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { LogOut } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
+import * as accountApi from '@/api/account'
 import { isApiError } from '@/api/errors'
 import BaseButton from '@/components/common/BaseButton.vue'
+import BaseInput from '@/components/common/BaseInput.vue'
 import BaseSwitch from '@/components/common/BaseSwitch.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
@@ -91,7 +93,62 @@ async function setCallSetting(key: 'call_ringtone' | 'call_vibrate', on: boolean
   }
 }
 
+/* ----------------------------------------------------------------------------------- password --- */
+
+const passwordForm = reactive({ current_password: '', password: '', password_confirmation: '' })
+const passwordErrors = reactive({ current_password: '', password: '', password_confirmation: '' })
+const passwordProblem = ref('')
+const changingPassword = ref(false)
+const passwordChanged = ref(false)
+
+function validatePassword(): boolean {
+  passwordErrors.current_password = passwordForm.current_password ? '' : t('settings.password.currentRequired')
+  passwordErrors.password = passwordForm.password.length >= 8 ? '' : t('auth.passwordTooShort')
+  passwordErrors.password_confirmation = passwordForm.password_confirmation === passwordForm.password ? '' : t('auth.passwordMismatch')
+  return !Object.values(passwordErrors).some(Boolean)
+}
+
+async function changePassword(): Promise<void> {
+  passwordProblem.value = ''
+  passwordChanged.value = false
+  if (!validatePassword()) return
+
+  changingPassword.value = true
+  try {
+    await accountApi.changePassword({ ...passwordForm })
+    passwordForm.current_password = passwordForm.password = passwordForm.password_confirmation = ''
+    passwordChanged.value = true
+  } catch (error) {
+    if (!isApiError(error)) throw error
+    if (error.status === 422) {
+      for (const key of Object.keys(passwordErrors) as (keyof typeof passwordErrors)[]) passwordErrors[key] = error.fieldError(key) ?? ''
+      if (!Object.values(passwordErrors).some(Boolean)) passwordProblem.value = error.message
+    } else passwordProblem.value = errorMessage(error, t)
+  } finally {
+    changingPassword.value = false
+  }
+}
+
 /* ------------------------------------------------------------------------------------ account --- */
+
+const sendingVerification = ref(false)
+const verificationSent = ref(false)
+const verificationProblem = ref('')
+
+async function sendVerification(): Promise<void> {
+  sendingVerification.value = true
+  verificationProblem.value = ''
+  try {
+    const { verified } = await accountApi.sendVerificationEmail()
+    if (verified) await auth.refreshUser()
+    else verificationSent.value = true
+  } catch (error) {
+    if (!isApiError(error)) throw error
+    verificationProblem.value = errorMessage(error, t)
+  } finally {
+    sendingVerification.value = false
+  }
+}
 
 const signingOut = ref(false)
 
@@ -180,6 +237,48 @@ async function signOut(): Promise<void> {
       <p v-if="dataSaverError" class="text-sm text-danger" role="alert">{{ problemText(dataSaverError) }}</p>
     </section>
 
+    <section class="flex flex-col gap-3 rounded-xl border border-border p-5" aria-labelledby="settings-password">
+      <h2 id="settings-password" class="font-semibold">{{ t('settings.password.title') }}</h2>
+      <p class="text-sm text-text-muted">{{ t('settings.password.hint') }}</p>
+      <form class="flex flex-col gap-4" novalidate @submit.prevent="changePassword">
+        <!-- For password managers: the account whose password this is. -->
+        <input type="email" name="email" autocomplete="username" :value="auth.user?.email ?? ''" class="sr-only" tabindex="-1" aria-hidden="true" readonly />
+        <BaseInput
+          v-model="passwordForm.current_password"
+          :label="t('settings.password.current')"
+          :error="passwordErrors.current_password"
+          type="password"
+          name="current_password"
+          autocomplete="current-password"
+          required
+        />
+        <BaseInput
+          v-model="passwordForm.password"
+          :label="t('account.newPassword')"
+          :hint="t('auth.passwordHint')"
+          :error="passwordErrors.password"
+          type="password"
+          name="password"
+          autocomplete="new-password"
+          required
+        />
+        <BaseInput
+          v-model="passwordForm.password_confirmation"
+          :label="t('account.confirmNewPassword')"
+          :error="passwordErrors.password_confirmation"
+          type="password"
+          name="password_confirmation"
+          autocomplete="new-password"
+          required
+        />
+        <p v-if="passwordProblem" class="text-sm text-danger" role="alert">{{ passwordProblem }}</p>
+        <p v-if="passwordChanged" class="text-sm text-text" role="status">{{ t('settings.password.done') }}</p>
+        <BaseButton type="submit" variant="secondary" class="self-start" :loading="changingPassword">
+          {{ changingPassword ? t('account.saving') : t('settings.password.submit') }}
+        </BaseButton>
+      </form>
+    </section>
+
     <section class="flex flex-col gap-4 rounded-xl border border-border p-5" aria-labelledby="settings-account">
       <h2 id="settings-account" class="font-semibold">{{ t('settings.account') }}</h2>
 
@@ -188,7 +287,16 @@ async function signOut(): Promise<void> {
         <div class="min-w-0">
           <p class="truncate font-medium">{{ t('settings.signedInAs', { name: auth.user.name }) }}</p>
           <p class="truncate text-sm text-text-muted">{{ auth.user.email }}</p>
+          <p class="text-sm" :class="auth.user.email_verified_at ? 'text-text-muted' : 'text-text'">
+            {{ auth.user.email_verified_at ? t('settings.email.verified') : t('settings.email.notVerified') }}
+          </p>
         </div>
+      </div>
+
+      <div v-if="auth.user && !auth.user.email_verified_at" class="flex flex-col items-start gap-2">
+        <p v-if="verificationSent" class="text-sm text-text" role="status">{{ t('settings.email.sent', { email: auth.user.email }) }}</p>
+        <BaseButton v-else variant="secondary" :loading="sendingVerification" @click="sendVerification">{{ t('settings.email.send') }}</BaseButton>
+        <p v-if="verificationProblem" class="text-sm text-danger" role="alert">{{ verificationProblem }}</p>
       </div>
 
       <BaseButton variant="secondary" :loading="signingOut" class="self-start" @click="signOut">

@@ -131,3 +131,26 @@ describe('login and register', () => {
     expect(r.currentRoute.value.name).toBe('home')
   })
 })
+
+describe('the pages the account emails link to', () => {
+  it.each(['/forgot-password', '/reset-password?token=t&email=e%40x.org', '/verify-email?id=1&hash=h&expires=1&signature=s'])(
+    'open signed out (%s)',
+    async (path) => {
+      const r = router()
+      await r.push(path)
+      expect(r.currentRoute.value.path).toBe(path.split('?')[0])
+    },
+  )
+
+  it.each(['/forgot-password', '/reset-password?token=t&email=e%40x.org', '/verify-email?id=1&hash=h&expires=1&signature=s'])(
+    'open signed in too, without asking the server first (%s)',
+    async (path) => {
+      signIn()
+      const { calls } = fakeApi(() => ({ data: { data: makeUser() } }))
+      const r = router()
+      await r.push(path)
+      expect(r.currentRoute.value.path).toBe(path.split('?')[0])
+      expect(calls).toHaveLength(0)
+    },
+  )
+})

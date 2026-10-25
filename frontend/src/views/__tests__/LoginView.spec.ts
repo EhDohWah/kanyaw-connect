@@ -139,3 +139,21 @@ describe('LoginView', () => {
     expect(wrapper.find('a[href="/register"]').exists()).toBe(true)
   })
 })
+
+describe('LoginView: a forgotten password', () => {
+  it('links to "Forgot your password?", carrying the address typed so far', async () => {
+    fakeApi(() => ({ data: {} }))
+    const { wrapper } = await open()
+    const link = () => wrapper.findAll('a').find((a) => a.text() === 'Forgot your password?')!
+
+    expect(link().attributes('href')).toBe('/forgot-password')
+    await wrapper.get('input[name=email]').setValue(' eh@example.org ')
+    expect(link().attributes('href')).toBe('/forgot-password?email=eh@example.org')
+  })
+
+  it('fills in the address when coming back from a reset', async () => {
+    fakeApi(() => ({ data: {} }))
+    const { wrapper } = await open('/login?email=paw%40example.com')
+    expect((wrapper.get('input[name=email]').element as HTMLInputElement).value).toBe('paw@example.com')
+  })
+})
