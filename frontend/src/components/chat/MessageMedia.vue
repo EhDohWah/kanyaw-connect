@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { FileText, ImageOff } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import VoicePlayer from '@/components/chat/VoicePlayer.vue'
 import { useFreshLink } from '@/composables/useFreshLink'
 import type { Attachment, MessageType } from '@/types/chat'
 import { formatBytes } from '@/utils/files'
 
-const props = defineProps<{ type: MessageType; attachment: Attachment; own?: boolean }>()
+const props = defineProps<{
+  type: MessageType
+  attachment: Attachment
+  own?: boolean
+  /** The message's id and metadata: a voice message's length and waveform are there. */
+  messageId?: string
+  metadata?: Record<string, unknown>
+}>()
 const emit = defineEmits<{ open: []; expired: [] }>()
 
 const { t } = useI18n()
@@ -20,6 +28,16 @@ watch(
     broken.value = false
   },
 )
+
+/** The voice message's length and waveform, as its sender measured them; ignored when they are not what they should be. */
+const durationMs = computed(() => {
+  const value = props.metadata?.duration_ms
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+})
+const waveform = computed(() => {
+  const value = props.metadata?.waveform
+  return Array.isArray(value) && value.length > 0 && value.every((bar) => typeof bar === 'number') ? (value as number[]) : null
+})
 
 const download = useFreshLink(
   () => props.attachment.url,
@@ -58,15 +76,16 @@ function onError(): void {
     </span>
   </button>
 
-  <!-- A voice message or any audio file. -->
-  <audio
+  <!-- A voice message or any audio file: nothing is downloaded until play is pressed. -->
+  <VoicePlayer
     v-else-if="type === 'voice'"
-    controls
-    preload="none"
+    :id="messageId ?? attachment.id"
     :src="attachment.url"
-    :aria-label="t('message.voiceMessage')"
-    class="h-11 w-64 max-w-full"
-    @error="emit('expired')"
+    :duration-ms="durationMs"
+    :waveform="waveform"
+    :own="own"
+    :name="attachment.original_name"
+    @expired="emit('expired')"
   />
 
   <!-- Any other file: a card that downloads it. -->

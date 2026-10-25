@@ -200,3 +200,12 @@ export function fromZonedInput(value: string, timeZone: string): string | null {
   const moment = fits(first) ? first : fits(second) ? second : Math.max(first, second)
   return new Date(moment).toISOString()
 }
+
+/** A length of time as a clock: "0:05", "3:12", "1:02:09". Negative and broken values read as 0:00. */
+export function formatDuration(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
+}

@@ -15,6 +15,13 @@ class StoreAttachment
     public const THUMBNAILABLE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
     /**
+     * Containers that hold audio as often as video. Content detection cannot tell an audio-only file in one of them
+     * from a video (a browser's WebM voice recording is "video/webm", an MP4 with the common "isom" brand
+     * "video/mp4"), so these are the only types the client's own declaration may turn into audio.
+     */
+    private const AUDIO_CONTAINERS = ['video/webm' => 'audio/webm', 'video/mp4' => 'audio/mp4', 'video/ogg' => 'audio/ogg'];
+
+    /**
      * In an encrypted chat the upload is an opaque encrypted blob: the server does not look at it, does
      * not trust the client's name or type for it, and makes no thumbnail. (Clients keep the real file
      * name and type inside the encrypted message.) `$encryptedKey` is stored and returned untouched.
@@ -36,7 +43,7 @@ class StoreAttachment
             'path' => $path,
             'original_name' => $encrypted ? 'attachment' : Str::limit($file->getClientOriginalName(), 200, ''),
             'size' => $file->getSize(),
-            'mime_type' => $encrypted ? 'application/octet-stream' : ($file->getMimeType() ?: 'application/octet-stream'),
+            'mime_type' => $encrypted ? 'application/octet-stream' : $this->typeOf($file),
             'encrypted_key' => $encrypted ? $encryptedKey : null,
         ]);
 
@@ -45,5 +52,17 @@ class StoreAttachment
         }
 
         return $attachment;
+    }
+
+    /**
+     * The type is decided from the content. The client's declared type only settles one question the content cannot:
+     * whether a WebM, MP4 or Ogg file is audio. The container family always stays the one the content proves.
+     */
+    private function typeOf(UploadedFile $file): string
+    {
+        $detected = $file->getMimeType() ?: 'application/octet-stream';
+        $audio = self::AUDIO_CONTAINERS[$detected] ?? null;
+
+        return $audio && str_starts_with(strtolower((string) $file->getClientMimeType()), 'audio/') ? $audio : $detected;
     }
 }

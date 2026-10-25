@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { FileText, Paperclip, SendHorizontal, X } from 'lucide-vue-next'
+import { FileText, Mic, Paperclip, SendHorizontal, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { isApiError } from '@/api/errors'
 import { MAX_ATTACHMENT_BYTES } from '@/api/attachments'
+import VoiceRecorderBar from '@/components/chat/VoiceRecorderBar.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
+import { recordingSupported, useVoiceRecorder, type RecorderProblem } from '@/composables/useVoiceRecorder'
 import { realtime } from '@/realtime'
 import { useAuthStore } from '@/stores/auth'
 import { useDraftsStore } from '@/stores/drafts'
@@ -57,6 +59,61 @@ const replySnippet = computed(() => {
   if (!target) return ''
   return target.content ?? { image: t('chat.preview.photo'), voice: t('chat.preview.voice'), file: t('chat.preview.file') }[target.type as 'image' | 'voice' | 'file'] ?? ''
 })
+
+/* ------------------------------------------------------------------------------------ voice messages --- */
+
+const recorder = useVoiceRecorder()
+/** Where the browser cannot record (no MediaRecorder or microphone), there is no button; attaching files still works. */
+const canRecord = recordingSupported()
+const micButton = ref<HTMLButtonElement | null>(null)
+/** With nothing typed or attached, the send button is the microphone. */
+const showMic = computed(() => canRecord && !editing.value && draft.value.text.trim() === '' && file.value === null)
+const recorderOpen = computed(() => recorder.state.value !== 'idle')
+
+function recorderProblemText(kind: RecorderProblem): string {
+  if (kind === 'too-short') return t('voice.tooShort')
+  // The same words as the meeting's pre-join screen.
+  if (kind === 'blocked') return t('voice.micBlocked')
+  return t(`call.media.microphone.${kind}`)
+}
+
+watch(recorder.problem, (kind) => {
+  if (!kind) return
+  problem.value = recorderProblemText(kind)
+  recorder.dismissProblem()
+  void nextTick(() => micButton.value?.focus())
+})
+
+function startRecording(): void {
+  problem.value = ''
+  void recorder.start()
+}
+
+function cancelRecording(): void {
+  recorder.cancel()
+  void nextTick(() => micButton.value?.focus())
+}
+
+async function sendVoice(): Promise<void> {
+  if (!auth.user) return
+  const taken = await recorder.take()
+  if (!taken) return
+
+  const replyToId = draft.value.replyToId
+  draft.value.replyToId = null
+  emit('sent')
+  void nextTick(() => micButton.value?.focus())
+
+  // The same optimistic send as any message: it shows at once and plays from the recording, which stays in memory
+  // until it is sent; a retry does not upload again once the upload has gone through.
+  await messages.send(props.chat.id, {
+    type: 'voice',
+    content: '',
+    replyToId,
+    file: taken.file,
+    voice: { durationMs: taken.durationMs, waveform: taken.waveform },
+  })
+}
 
 const canSend = computed(() => {
   if (saving.value) return false
@@ -189,7 +246,7 @@ async function submit(): Promise<void> {
   })
 }
 
-defineExpose({ focus: focusBox })
+defineExpose({ focus: focusBox, startRecording })
 </script>
 
 <template>
@@ -232,7 +289,21 @@ defineExpose({ focus: focusBox })
 
     <p v-if="problem" class="mb-2 text-sm text-danger" role="alert">{{ problem }}</p>
 
-    <div class="flex items-end gap-2">
+    <!-- Recording, or listening to the recording before sending: in place of the box. -->
+    <VoiceRecorderBar
+      v-if="recorderOpen"
+      :state="recorder.state.value"
+      :elapsed-ms="recorder.elapsedMs.value"
+      :level="recorder.level.value"
+      :recording="recorder.recording.value"
+      :notice="recorder.notice.value"
+      :preview-id="`preview:${chat.id}`"
+      @cancel="cancelRecording"
+      @stop="recorder.stop()"
+      @send="sendVoice"
+    />
+
+    <div v-else class="flex items-end gap-2">
       <button
         v-if="!editing"
         type="button"
@@ -257,6 +328,17 @@ defineExpose({ focus: focusBox })
       />
 
       <button
+        v-if="showMic"
+        ref="micButton"
+        type="button"
+        class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary transition-colors duration-150 hover:bg-primary-hover"
+        :aria-label="t('voice.record')"
+        @click="startRecording"
+      >
+        <Mic class="size-5" aria-hidden="true" />
+      </button>
+      <button
+        v-else
         type="submit"
         class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary transition-colors duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
         :disabled="!canSend"

@@ -197,6 +197,12 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  /** A recorded voice message's length and waveform, as the API takes them (voice messages only). */
+  function voiceMetadata(draft: SendDraft): { duration_ms?: number; waveform?: number[] } {
+    if (draft.type !== 'voice' || !draft.voice) return {}
+    return { duration_ms: Math.round(draft.voice.durationMs), waveform: draft.voice.waveform }
+  }
+
   /** What the message looks like on screen before the server has answered. */
   function optimisticMessage(chatId: string, clientId: string, draft: SendDraft): TimelineMessage {
     const me = auth.user!
@@ -227,7 +233,8 @@ export const useMessagesStore = defineStore('messages', () => {
       client_id: clientId,
       is_edited: false,
       edited_at: null,
-      metadata: {},
+      // A voice message plays from the recording at once, with its length and waveform.
+      metadata: draft.voice ? { duration_ms: draft.voice.durationMs, waveform: draft.voice.waveform } : {},
       encrypted: false,
       attachment,
       created_at: new Date().toISOString(),
@@ -242,7 +249,8 @@ export const useMessagesStore = defineStore('messages', () => {
 
   function releasePreview(clientId: string): void {
     const url = localPreviews.get(clientId)
-    if (url) URL.revokeObjectURL(url)
+    // After the bubble that shows it has been replaced by the server's message (a voice player may still hold it).
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 0)
     localPreviews.delete(clientId)
     uploads.delete(clientId)
   }
@@ -296,7 +304,7 @@ export const useMessagesStore = defineStore('messages', () => {
         type: draft.type,
         ...(draft.content ? { content: draft.content } : {}),
         ...(draft.replyToId ? { reply_to_id: draft.replyToId } : {}),
-        ...(draft.attachmentId ? { metadata: { attachment_id: draft.attachmentId } } : {}),
+        ...(draft.attachmentId ? { metadata: { attachment_id: draft.attachmentId, ...voiceMetadata(draft) } } : {}),
       })
 
       releasePreview(clientId)

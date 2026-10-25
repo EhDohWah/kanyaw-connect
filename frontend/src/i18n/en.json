@@ -616,5 +616,28 @@
   },
   "push": {
     "inMeeting": "You're in a meeting, so the notification you tapped was not opened. Leave the meeting first."
+  },
+  "voice": {
+    "record": "Record voice message",
+    "recordingLabel": "Recording a voice message",
+    "previewLabel": "Your voice message, before sending",
+    "starting": "Starting the microphone…",
+    "recording": "Recording",
+    "recordingFor": "Recording for {time}",
+    "stop": "Stop and listen",
+    "delete": "Delete recording",
+    "send": "Send voice message",
+    "tooShort": "That was under a second, so it was not kept. Tap the microphone and speak a little longer.",
+    "limitReached": "Recording stopped at 5 minutes. Listen to it or send it.",
+    "interrupted": "Recording stopped. What was recorded is kept: listen to it or send it.",
+    "micBlocked": "The browser is not allowing the microphone. Allow it in the browser's settings, then try again.",
+    "play": "Play voice message",
+    "pause": "Pause voice message",
+    "position": "Position in the voice message",
+    "positionOf": "{position} of {total}",
+    "speed": "Playback speed: {speed}",
+    "unsupported": "This voice message can't play on this device.",
+    "download": "Download it",
+    "loadFailed": "The voice message could not be loaded. Check your connection and try again."
   }
 }

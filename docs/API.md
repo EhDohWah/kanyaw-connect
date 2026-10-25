@@ -296,7 +296,7 @@ Returned by the chat endpoints. `GET /chats` rows have everything except `member
 | `reply_to` | A small preview of the message replied to: `{ id, sender_id, type, content, is_deleted }`. `content` is cut to 140 characters and is `null` when the original was deleted. |
 | `client_id` | Only present on messages **you** sent: the idempotency key you chose |
 | `is_edited`, `edited_at` | Text can be edited by its sender for 24 hours. Encrypted messages cannot be edited. |
-| `metadata` | Object. `attachment_id` for media messages; `sender_device_id` for encrypted ones. |
+| `metadata` | Object. `attachment_id` for media messages; `sender_device_id` for encrypted ones. A `voice` message may also carry `duration_ms` and `waveform` as its sender measured them (display hints, see [sending](#post-chatschatmessages)); either can be missing. |
 | `encrypted` | `true` for messages in encrypted chats |
 | `envelope` | Encrypted chats only, see [Envelope](#envelope) |
 | `attachment` | An [Attachment](#attachment) for `image`, `file` and `voice` messages, otherwise `null` |
@@ -914,6 +914,8 @@ Send a message. **Limit:** 30 per minute.
 | `content` | string | required for `text`; optional caption for the others; max 5000 characters. **Not allowed in an encrypted chat.** |
 | `reply_to_id` | uuid | optional; a message of the same chat that is not deleted |
 | `metadata.attachment_id` | uuid | required for `image`, `file`, `voice`: an [attachment you uploaded](#post-chatschatattachments) to this chat and have not used yet. An `image` needs an `image/*` file and a `voice` message an `audio/*` file. |
+| `metadata.duration_ms` | integer | `voice` only, optional: 1–600000, the recording's length in milliseconds. A JSON number, not a string. |
+| `metadata.waveform` | array | `voice` only, optional: 16–64 integers, each 0–255, the loudness along the recording, for drawing it before it is downloaded. |
 | `envelopes` | array | **Encrypted chats only**, required. See [section 5](#5-guide-end-to-end-encryption). |
 
 ```json
@@ -973,7 +975,21 @@ Everyone else hears [`message.sent`](#messagesent). For an attachment, upload th
 }
 ```
 
-**Errors:** `422` (for example a missing `content` on a text message); `403` if you are not a member; `429` over 30 a minute. In an encrypted chat also `409 envelope_mismatch` and `409 no_recipient_devices`, and `422` if `content` is present.
+A voice message, with the length and waveform the recording app measured. They are display hints: stored and returned exactly as sent, and never used by the server for anything else. Other message types accept only `attachment_id` in `metadata`; so does a voice message in an encrypted chat (put them inside the encrypted message there).
+
+```json
+{
+  "client_id": "0195e2c4-0020-7a1f-811f-5f3a9c03d001",
+  "type": "voice",
+  "metadata": {
+    "attachment_id": "0195e2c4-0021-7a20-8120-5f3a9c03d002",
+    "duration_ms": 4200,
+    "waveform": [12, 40, 88, 120, 96, 64, 140, 210, 255, 180, 150, 90, 60, 110, 170, 130, 80, 40, 30, 70, 120, 160, 140, 100, 60, 90, 130, 200, 230, 190, 120, 80, 50, 40, 60, 100, 140, 120, 90, 60, 40, 30, 20, 30, 50, 30, 20, 10]
+  }
+}
+```
+
+**Errors:** `422` (for example a missing `content` on a text message, a `duration_ms` sent as a string, or a `waveform` with 15 values); `403` if you are not a member; `429` over 30 a minute. In an encrypted chat also `409 envelope_mismatch` and `409 no_recipient_devices`, and `422` if `content` is present.
 
 ### GET /messages/{message}
 
@@ -1008,6 +1024,8 @@ Upload a file for a later message. `multipart/form-data`:
 
 The server never uses the client's file name on disk and decides the stored type from the file's content. Images get a thumbnail a few moments later. An upload that is not attached to a message within 24 hours is deleted.
 
+**Voice recordings.** Content detection cannot tell an audio-only WebM or MP4 from a video: a voice note recorded in Chrome or Firefox (WebM/Opus) is detected as `video/webm`, and one recorded in Safari (MP4/AAC with the common `isom` brand) as `video/mp4`. When the detected type is `video/webm`, `video/mp4` or `video/ogg` **and** the type your request declares for the file (its `Content-Type` in the form data) starts with `audio/`, it is stored as `audio/webm`, `audio/mp4` or `audio/ogg`. The container always stays the one the content proves; nothing else is taken from the declared type. So upload a recording as, for example, `voice-1773478800.webm` with type `audio/webm` (without the `;codecs=` part), and it can be sent as a `voice` message.
+
 **Response `201`:**
 
 ```json
@@ -1030,7 +1048,7 @@ Send the `id` as `metadata.attachment_id` in a message.
 
 ### GET /attachments/{attachment}/thumbnail
 
-Download the bytes. **No bearer token:** access is granted by the signed URL (`url` / `thumbnail_url` of an [Attachment](#attachment)), valid for 60 minutes; without a valid signature the answer is `403`. Images and audio are shown inline, everything else is a download. These responses are private-cacheable for an hour and always carry `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`. `404` for a missing thumbnail.
+Download the bytes. **No bearer token:** access is granted by the signed URL (`url` / `thumbnail_url` of an [Attachment](#attachment)), valid for 60 minutes; without a valid signature the answer is `403`. Images and audio are shown inline, everything else is a download. Byte ranges are answered (`Range: bytes=0-99` gives `206 Partial Content` with `Content-Range`; a range past the end gives `416`), which Safari needs to play audio and video at all, and which lets every browser seek. These responses are private-cacheable for an hour and always carry `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`. `404` for a missing thumbnail.
 
 ### 3.7 Video rooms
 

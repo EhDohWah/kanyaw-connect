@@ -76,6 +76,15 @@ export interface SendDraft {
   file: File | null
   /** Set once the upload has succeeded, so a retry does not upload twice. */
   attachmentId: string | null
+  /** A recorded voice message: its length and waveform, as measured while recording. */
+  voice?: VoiceHints | null
+}
+
+/** What a voice message says about itself, for the player to draw before anything is downloaded. */
+export interface VoiceHints {
+  durationMs: number
+  /** 16–64 values of 0–255. */
+  waveform: number[]
 }
 
 export interface PendingInfo {

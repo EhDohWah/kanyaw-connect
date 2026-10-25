@@ -89,6 +89,8 @@ function run(key: MessageActionKey): void {
             v-if="message.attachment"
             :type="message.type"
             :attachment="message.attachment"
+            :message-id="message.id"
+            :metadata="message.metadata"
             :own="own"
             :class="message.content ? 'mb-2' : ''"
             @open="emit('openImage', message.id)"

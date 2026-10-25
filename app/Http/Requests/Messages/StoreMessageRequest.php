@@ -22,6 +22,10 @@ class StoreMessageRequest extends FormRequest
     public function rules(): array
     {
         $isText = $this->input('type') === MessageType::Text->value;
+        // A voice message may also say how long it is and what it looks like, for the player to draw before
+        // downloading anything. Display hints from the sender: stored and returned as sent, never trusted.
+        // Not in an encrypted chat, where they would tell the server something about what was said.
+        $voiceHints = $this->input('type') === MessageType::Voice->value && ! $this->route('chat')->is_encrypted;
 
         $rules = [
             'client_id' => ['required', 'uuid'],
@@ -31,9 +35,17 @@ class StoreMessageRequest extends FormRequest
                 'nullable', 'uuid',
                 Rule::exists('messages', 'id')->where('chat_id', $this->route('chat')->id)->whereNull('deleted_at'),
             ],
-            'metadata' => ['exclude_if:type,text', 'array:attachment_id'],
+            'metadata' => ['exclude_if:type,text', $voiceHints ? 'array:attachment_id,duration_ms,waveform' : 'array:attachment_id'],
             'metadata.attachment_id' => [Rule::requiredIf(! $isText && $this->input('type') !== null), 'uuid'],
         ];
+
+        if ($voiceHints) {
+            $rules += [
+                'metadata.duration_ms' => ['sometimes', 'integer:strict', 'between:1,600000'],
+                'metadata.waveform' => ['sometimes', 'array', 'list', 'between:16,64'],
+                'metadata.waveform.*' => ['integer:strict', 'between:0,255'],
+            ];
+        }
 
         return $this->route('chat')->is_encrypted ? $this->encryptedRules($rules) : $rules + ['envelopes' => ['prohibited']];
     }
@@ -81,6 +93,7 @@ class StoreMessageRequest extends FormRequest
             'content.prohibited' => 'Encrypted chats do not accept plaintext content. Send encrypted envelopes instead.',
             'envelopes.prohibited' => 'This chat is not encrypted, so it does not accept envelopes.',
             'metadata.attachment_id.required' => 'Image, file and voice messages need metadata.attachment_id.',
+            'metadata.array' => 'The metadata may only contain attachment_id (and, for a voice message, duration_ms and waveform).',
         ];
     }
 }

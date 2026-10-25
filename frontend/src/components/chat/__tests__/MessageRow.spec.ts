@@ -125,13 +125,25 @@ describe('pictures, voice and files', () => {
     expect(wrapper.text()).toContain('Photo unavailable')
   })
 
-  it('shows an audio player for a voice message', async () => {
-    const { wrapper } = await mountRow(makeMessage({ type: 'voice', content: null, attachment: attachment({ mime_type: 'audio/webm', original_name: 'voice.webm', thumbnail_url: null }) }))
+  it('shows its own voice player for a voice message: no browser controls, nothing downloaded until play', async () => {
+    const expired = 'https://files/voice.webm?expires=1000&signature=abc'
+    const { wrapper } = await mountRow(
+      makeMessage({
+        type: 'voice',
+        content: null,
+        metadata: { attachment_id: 'a1', duration_ms: 4200, waveform: new Array(48).fill(100) },
+        attachment: attachment({ mime_type: 'audio/webm', original_name: 'voice.webm', thumbnail_url: null, url: expired }),
+      }),
+    )
 
     const audio = wrapper.get('audio')
-    expect(audio.attributes('controls')).toBeDefined()
-    expect(audio.attributes('src')).toBe('https://files/full.png')
-    expect(audio.attributes('aria-label')).toBe('Voice message')
+    expect(audio.attributes('controls')).toBeUndefined()
+    expect(audio.attributes('preload')).toBe('none')
+    expect(audio.attributes('src')).toBe(expired)
+    expect(wrapper.get('[role=group]').attributes('aria-label')).toBe('Voice message')
+    expect(wrapper.findAll('[role=slider] span')).toHaveLength(48)
+    expect(wrapper.text()).toContain('0:04')
+    // The signed link has run out: the conversation is asked for a fresh one.
     await audio.trigger('error')
     expect(wrapper.emitted('expired')).toBeTruthy()
   })

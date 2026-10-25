@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Attachment;
 use App\Models\Chat;
 use App\Models\Message;
 use App\Models\User;
@@ -218,4 +219,82 @@ it('works in group chats', function () {
 
     $this->postJson("/api/v1/chats/{$group->id}/messages", sendPayload())->assertCreated();
     expect(Chat::find($group->id)->messages()->count())->toBe(1);
+});
+
+describe('voice messages: length and waveform', function () {
+    beforeEach(function () {
+        $this->voice = fn (array $metadata = [], string $type = 'voice', ?Chat $chat = null) => $this->postJson(
+            '/api/v1/chats/'.($chat ?? $this->chat)->id.'/messages',
+            sendPayload(['type' => $type, 'content' => null, 'metadata' => array_merge([
+                'attachment_id' => Attachment::factory()->create([
+                    'chat_id' => ($chat ?? $this->chat)->id,
+                    'uploader_id' => $this->me->id,
+                    'mime_type' => $type === 'voice' ? 'audio/webm' : 'image/png',
+                ])->id,
+            ], $metadata)]),
+        );
+    });
+
+    it('stores duration_ms and waveform as sent and returns them (also on the event and in lists)', function () {
+        $waveform = array_map(fn (int $i) => ($i * 37) % 256, range(0, 47));
+
+        $response = ($this->voice)(['duration_ms' => 4200, 'waveform' => $waveform])
+            ->assertCreated()
+            ->assertJsonPath('data.metadata.duration_ms', 4200)
+            ->assertJsonPath('data.metadata.waveform', $waveform);
+
+        expect(Message::find($response->json('data.id'))->metadata)
+            ->toMatchArray(['duration_ms' => 4200, 'waveform' => $waveform]);
+        $this->getJson("/api/v1/chats/{$this->chat->id}/messages")->assertJsonPath('data.0.metadata.waveform', $waveform);
+    });
+
+    it('takes either, or neither (files sent before, or from apps that do not measure)', function () {
+        ($this->voice)(['duration_ms' => 1])->assertCreated()->assertJsonMissingPath('data.metadata.waveform');
+        ($this->voice)(['waveform' => array_fill(0, 16, 0)])->assertCreated()->assertJsonMissingPath('data.metadata.duration_ms');
+        ($this->voice)()->assertCreated()->assertJsonMissingPath('data.metadata.duration_ms');
+    });
+
+    it('accepts the limits exactly', function () {
+        ($this->voice)(['duration_ms' => 600000, 'waveform' => array_fill(0, 64, 255)])->assertCreated();
+        ($this->voice)(['duration_ms' => 1, 'waveform' => array_fill(0, 16, 0)])->assertCreated();
+    });
+
+    it('refuses what is out of range', function (array $metadata, string $field) {
+        ($this->voice)($metadata)->assertUnprocessable()->assertJsonValidationErrors($field);
+        expect(Message::count())->toBe(0);
+    })->with([
+        'no length' => [['duration_ms' => 0], 'metadata.duration_ms'],
+        'longer than 10 minutes' => [['duration_ms' => 600001], 'metadata.duration_ms'],
+        'a length as text' => [['duration_ms' => '4200'], 'metadata.duration_ms'],
+        'a fractional length' => [['duration_ms' => 4200.5], 'metadata.duration_ms'],
+        'too few bars' => [['waveform' => array_fill(0, 15, 1)], 'metadata.waveform'],
+        'too many bars' => [['waveform' => array_fill(0, 65, 1)], 'metadata.waveform'],
+        'a bar over 255' => [['waveform' => [...array_fill(0, 20, 1), 256]], 'metadata.waveform.20'],
+        'a negative bar' => [['waveform' => [-1, ...array_fill(0, 20, 1)]], 'metadata.waveform.0'],
+        'a bar as text' => [['waveform' => ['7', ...array_fill(0, 20, 1)]], 'metadata.waveform.0'],
+        'an object, not a list' => [['waveform' => array_combine(array_map(fn ($i) => "k{$i}", range(1, 20)), array_fill(0, 20, 1))], 'metadata.waveform'],
+    ]);
+
+    it('other message types still take only attachment_id', function () {
+        ($this->voice)(['duration_ms' => 4200], 'image')->assertUnprocessable()->assertJsonValidationErrors('metadata');
+        ($this->voice)(['waveform' => array_fill(0, 20, 1)], 'image')->assertUnprocessable()->assertJsonValidationErrors('metadata');
+    });
+
+    it('voice messages take nothing else either', function () {
+        ($this->voice)(['duration_ms' => 4200, 'transcript' => 'hello'])->assertUnprocessable()->assertJsonValidationErrors('metadata');
+    });
+
+    it('not in an encrypted chat, where they would tell the server about what was said', function () {
+        $device = makeDevice($this->me);
+        $friend = User::factory()->create();
+        $chat = makeEncryptedDirect($this->me, $friend);
+        $attachment = Attachment::factory()->create(['chat_id' => $chat->id, 'uploader_id' => $this->me->id]);
+
+        $this->postJson("/api/v1/chats/{$chat->id}/messages", [
+            'client_id' => (string) Str::uuid(),
+            'type' => 'voice',
+            'metadata' => ['attachment_id' => $attachment->id, 'duration_ms' => 4200],
+            'envelopes' => envelopesFor([makeDevice($friend)]),
+        ], ['X-Device-Id' => $device->id])->assertUnprocessable()->assertJsonValidationErrors('metadata');
+    });
 });

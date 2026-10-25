@@ -39,6 +39,9 @@ afterEach(() => {
   setBrowserPush(null)
   vi.useRealTimers()
   vi.restoreAllMocks()
+  // Fakes put in place of browser APIs jsdom lacks (MediaRecorder, AudioContext, the microphone).
+  vi.unstubAllGlobals()
+  Reflect.deleteProperty(navigator, 'mediaDevices')
   document.body.innerHTML = ''
   setUnauthorizedHandler(() => undefined)
   setSocketIdResolver(() => undefined)

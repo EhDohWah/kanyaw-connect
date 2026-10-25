@@ -30,7 +30,7 @@ class SendMessage
      * and is sent from $device. The server checks that the envelopes cover exactly the right devices,
      * then stores them untouched; it never reads them.
      *
-     * @param  array{client_id: string, type: string, content?: string|null, reply_to_id?: string|null, metadata?: array{attachment_id?: string}, envelopes?: list<array{recipient_device_id: string, ciphertext: string, header: array<string, mixed>}>}  $data
+     * @param  array{client_id: string, type: string, content?: string|null, reply_to_id?: string|null, metadata?: array{attachment_id?: string, duration_ms?: int, waveform?: list<int>}, envelopes?: list<array{recipient_device_id: string, ciphertext: string, header: array<string, mixed>}>}  $data
      * @return array{0: Message, 1: bool} the message, and whether it was newly created
      *
      * @throws ConflictHttpException when the client_id was already used for a different chat
@@ -84,7 +84,10 @@ class SendMessage
             // Recipients need to know which device sent an encrypted message (to pick the right session).
             'sender_device_id' => $encrypted ? $device->getKey() : null,
             'attachment_id' => $attachment?->getKey(),
-        ]);
+            // A voice message's length and waveform, as the sender measured them (validated as voice-only).
+            'duration_ms' => $type === MessageType::Voice ? ($data['metadata']['duration_ms'] ?? null) : null,
+            'waveform' => $type === MessageType::Voice ? ($data['metadata']['waveform'] ?? null) : null,
+        ], fn ($value) => $value !== null);
 
         $message = Message::create([
             'chat_id' => $chat->getKey(),

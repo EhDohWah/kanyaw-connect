@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 beforeEach(function () {
     Storage::fake('local');
@@ -17,6 +18,24 @@ beforeEach(function () {
     $this->friend = User::factory()->create();
     $this->chat = makeDirect($this->me, $this->friend);
 });
+
+/** A real file from tests/Fixtures/audio, uploaded with the type the browser would declare. */
+function audioFixture(string $name, ?string $declared): UploadedFile
+{
+    $path = base_path("tests/Fixtures/audio/{$name}");
+
+    return new UploadedFile($path, $name, $declared, null, true);
+}
+
+/** The bytes of a file response, whether it was streamed or sent from disk. */
+function servedContent($response): string
+{
+    $base = $response->baseResponse;
+
+    return $base instanceof BinaryFileResponse
+        ? (string) file_get_contents($base->getFile()->getPathname())
+        : $response->streamedContent();
+}
 
 function upload($test, $chat, UploadedFile $file)
 {
@@ -222,6 +241,64 @@ describe('sending an attachment as a message', function () {
     });
 });
 
+describe('voice recordings', function () {
+    it('types an audio-only WebM or MP4 as audio when the browser says it is audio', function (string $file, string $declared, string $stored) {
+        Queue::fake();
+
+        $id = upload($this, $this->chat, audioFixture($file, $declared))->assertCreated()->assertJsonPath('data.mime_type', $stored)->json('data.id');
+
+        sendWithAttachment($this, $this->chat, $id, 'voice', ['content' => null])->assertCreated()->assertJsonPath('data.attachment.mime_type', $stored);
+    })->with([
+        // Chrome and Firefox record WebM/Opus; content detection calls it video/webm.
+        'WebM (Chrome, Firefox)' => ['voice.webm', 'audio/webm', 'audio/webm'],
+        // Safari records MP4/AAC; with the common "isom" brand it is detected as video/mp4.
+        'MP4 with the isom brand (Safari)' => ['voice.mp4', 'audio/mp4', 'audio/mp4'],
+        // An Ogg/Opus file is already detected as audio; nothing to relabel.
+        'Ogg/Opus' => ['voice.ogg', 'audio/ogg', 'audio/ogg'],
+        // An Ogg detected as video becomes audio/ogg.
+        'Ogg detected as video' => ['video.ogv', 'audio/ogg', 'audio/ogg'],
+        // The family always comes from the content: a WebM declared as Ogg audio is audio/webm.
+        'WebM declared as another audio type' => ['voice.webm', 'audio/ogg', 'audio/webm'],
+        // Declared types are compared without caring about case.
+        'declared in capitals' => ['voice.webm', 'AUDIO/WEBM', 'audio/webm'],
+    ]);
+
+    it('keeps the detected type when the browser does not say audio', function (string $file, ?string $declared, string $stored) {
+        Queue::fake();
+
+        upload($this, $this->chat, audioFixture($file, $declared))->assertCreated()->assertJsonPath('data.mime_type', $stored);
+    })->with([
+        'declared as video' => ['voice.webm', 'video/webm', 'video/webm'],
+        'declared as nothing in particular' => ['voice.mp4', 'application/octet-stream', 'video/mp4'],
+        'no declared type' => ['voice.webm', null, 'video/webm'],
+    ]);
+
+    it('never relabels anything but a WebM, MP4 or Ogg container', function () {
+        Queue::fake();
+
+        // A real PNG (a fake upload would report the declared type as its content type).
+        $png = UploadedFile::fake()->image('photo.png', 10, 10);
+        upload($this, $this->chat, new UploadedFile($png->getPathname(), 'photo.png', 'audio/webm', null, true))
+            ->assertCreated()
+            ->assertJsonPath('data.mime_type', 'image/png');
+    });
+
+    it('a voice message with a WebM that was not declared as audio is still refused', function () {
+        Queue::fake();
+        $id = upload($this, $this->chat, audioFixture('voice.webm', 'video/webm'))->json('data.id');
+
+        sendWithAttachment($this, $this->chat, $id, 'voice')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['metadata.attachment_id' => 'A voice message needs a audio/* attachment.']);
+    });
+
+    it('relabels nothing in an encrypted chat (the upload is an opaque blob)', function () {
+        $chat = makeEncryptedDirect($this->me, User::factory()->create());
+
+        upload($this, $chat, audioFixture('voice.webm', 'audio/webm'))->assertCreated()->assertJsonPath('data.mime_type', 'application/octet-stream');
+    });
+});
+
 describe('downloading', function () {
     it('serves the file through the signed URL without a bearer token', function () {
         Queue::fake();
@@ -236,7 +313,7 @@ describe('downloading', function () {
         $response->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertHeader('Content-Security-Policy', "default-src 'none'; sandbox");
-        expect($response->streamedContent())->toBe($content);
+        expect(servedContent($response))->toBe($content);
     });
 
     it('forces non-image files to download and shows images inline', function () {
@@ -277,6 +354,34 @@ describe('downloading', function () {
 
         $this->travel(config('chat.attachments.url_ttl_minutes') + 1)->minutes();
         $this->get($signed)->assertForbidden();
+    });
+
+    it('answers byte ranges, so Safari can play a voice message and every browser can seek', function () {
+        Queue::fake();
+        $attachment = Attachment::find(upload($this, $this->chat, audioFixture('voice.webm', 'audio/webm'))->json('data.id'));
+        $bytes = file_get_contents(base_path('tests/Fixtures/audio/voice.webm'));
+
+        $whole = $this->get($attachment->fileUrl());
+        $whole->assertOk()->assertHeader('Accept-Ranges', 'bytes')->assertHeader('Content-Type', 'audio/webm');
+        expect(servedContent($whole))->toBe($bytes);
+
+        $part = $this->get($attachment->fileUrl(), ['Range' => 'bytes=0-99']);
+        $part->assertStatus(206)
+            ->assertHeader('Content-Range', 'bytes 0-99/'.strlen($bytes))
+            ->assertHeader('Content-Length', '100')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        expect($part->headers->get('Content-Disposition'))->toStartWith('inline');
+
+        $this->get($attachment->fileUrl(), ['Range' => 'bytes=999999-1000000'])->assertStatus(416);
+    });
+
+    it('keeps a non-ASCII file name readable, with a plain fallback for old browsers', function () {
+        Queue::fake();
+        $attachment = Attachment::find(upload($this, $this->chat, UploadedFile::fake()->createWithContent('ကညီ notes.pdf', 'pdf'))->json('data.id'));
+
+        $disposition = $this->get($attachment->fileUrl())->headers->get('Content-Disposition');
+        expect($disposition)->toContain('filename="_')->toContain("filename*=utf-8''");
     });
 
     it('answers 404 when the file has gone from disk', function () {

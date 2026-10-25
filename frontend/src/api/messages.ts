@@ -15,7 +15,8 @@ export interface OutgoingMessage {
   type: Exclude<MessageType, 'system'>
   content?: string
   reply_to_id?: string
-  metadata?: { attachment_id: string }
+  /** `duration_ms` and `waveform` only for a voice message (docs/API.md, 3.5). */
+  metadata?: { attachment_id: string; duration_ms?: number; waveform?: number[] }
 }
 
 /**
