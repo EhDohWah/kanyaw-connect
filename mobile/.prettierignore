@@ -1,0 +1,5 @@
+node_modules
+.expo
+ios
+android
+src/i18n/locales/*.json

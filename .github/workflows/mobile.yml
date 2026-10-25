@@ -1,0 +1,49 @@
+name: Mobile
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - 'frontend/src/i18n/**'
+      - 'frontend/src/style.css'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'frontend/src/i18n/**'
+      - 'frontend/src/style.css'
+      - '.github/workflows/mobile.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Expo SDK 58 needs Node 22.13 or later.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      # The texts and colours are the web app's: these fail when the two drift apart.
+      - name: Locale files match the web app
+        run: npm run i18n:check
+
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test -- --ci --forceExit
+
+      # The app config (plugins, permissions, bundle identifier) must still resolve.
+      - name: App config resolves
+        run: npx expo config --type public > /dev/null

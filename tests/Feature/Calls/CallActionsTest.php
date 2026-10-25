@@ -284,7 +284,8 @@ describe('POST /calls/{call}/decline', function () {
             $tampered = match ($change) {
                 'another call' => str_replace($call->id, $other->id, $url),
                 'later expiry' => preg_replace('/expires=(\d+)/', 'expires='.($call->ring_expires_at->timestamp + 3600), $url),
-                'signature' => preg_replace('/signature=([0-9a-f])/', 'signature=0', $url),
+                // Always a different first character: replacing it with a fixed one left the link unchanged 1 time in 16.
+                'signature' => preg_replace_callback('/signature=([0-9a-f])/', fn (array $m) => 'signature='.($m[1] === '0' ? '1' : '0'), $url),
             };
 
             $this->postJson($tampered)->assertForbidden();

@@ -12,7 +12,11 @@ item they belong to.
 | 4. Video | Done, approved |
 | 5. Push and polish | Done, approved |
 | 6. Voice messages and one-to-one calls (Phase 6 prompt) | Done, approved |
-| 7. Account basics (no prompt; scope agreed in chat) | 7A (backend) done; 7B (app) done, waiting for review |
+| 7. Account basics (no prompt; scope agreed in chat) | 7A and 7B done; you moved on to Phase 8 (the mobile app, in `mobile/PROGRESS.md`) |
+
+**Later** (agreed on 25 October 2026, after Phase 8): finding people (user search); chat controls (group photo, mute,
+archive, pin); editing or cancelling a scheduled meeting; the real feed (posts, likes, comments: a new backend area);
+"seen by" read receipts.
 
 ## Phase 1: Foundation
 

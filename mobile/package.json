@@ -1,0 +1,90 @@
+{
+  "name": "kanyaw-connect-mobile",
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@config-plugins/react-native-webrtc": "^15.0.2",
+    "@livekit/react-native": "^3.1.0",
+    "@livekit/react-native-expo-plugin": "^1.1.0",
+    "@livekit/react-native-webrtc": "^150.1.0",
+    "@react-native-community/netinfo": "12.0.1",
+    "axios": "^1.20.0",
+    "expo": "~58.0.19",
+    "expo-constants": "~58.0.13",
+    "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.15",
+    "expo-device": "~58.0.5",
+    "expo-file-system": "~58.0.11",
+    "expo-font": "~58.0.10",
+    "expo-haptics": "~58.0.7",
+    "expo-image": "~58.0.17",
+    "expo-image-manipulator": "~58.0.15",
+    "expo-image-picker": "~58.0.10",
+    "expo-keep-awake": "~58.0.3",
+    "expo-linking": "~58.0.14",
+    "expo-localization": "~58.0.5",
+    "expo-router": "~58.0.26",
+    "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.11",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.6",
+    "i18next": "^26.5.10",
+    "laravel-echo": "^2.6.1",
+    "livekit-client": "^2.23.0",
+    "lucide-react-native": "^1.61.0",
+    "pusher-js": "^8.6.0",
+    "react": "19.3.0",
+    "react-i18next": "^17.1.8",
+    "react-native": "0.88.0",
+    "react-native-gesture-handler": "~3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0",
+    "react-native-worklets": "0.13.0",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.7",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.12",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "lint": "expo lint",
+    "format": "prettier --write .",
+    "type-check": "tsc --noEmit",
+    "test": "jest",
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "i18n:copy": "node scripts/i18n-check.mjs --copy"
+  },
+  "private": true,
+  "jest": {
+    "preset": "jest-expo",
+    "setupFiles": [
+      "<rootDir>/jest.setup.ts"
+    ],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^lucide-react-native$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|standard-navigation|@livekit/.*|livekit-client|lucide-react-native|react-native-svg)"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/.expo/"
+    ]
+  }
+}
