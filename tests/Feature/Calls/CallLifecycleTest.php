@@ -13,6 +13,7 @@ use App\Models\RoomParticipant;
 use App\Models\User;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->livekit = fakeLiveKit();
@@ -142,6 +143,22 @@ describe('the summary message in the chat', function () {
         Event::assertDispatched(MessageSent::class, fn (MessageSent $event) => payloadOf($event)['message']['metadata']['event'] === 'call'
             && in_array("private-user.{$this->caller->id}", channelNames($event), true)
             && in_array("private-user.{$this->callee->id}", channelNames($event), true));
+    });
+
+    it('reaches the device whose request ended the call too (it has no copy of the summary)', function () {
+        $call = makeCall($this->caller, $this->callee);
+        signIn($this->callee);
+        $this->withHeader('X-Socket-ID', '1234.5678')->postJson("/api/v1/calls/{$call->id}/decline")->assertOk();
+
+        Event::assertDispatched(MessageSent::class, fn (MessageSent $event) => payloadOf($event)['message']['type'] === 'system' && $event->socket === null);
+    });
+
+    it('a person\'s own message still skips the device that sent it', function () {
+        $chat = makeDirect($this->caller, $this->callee);
+        signIn($this->caller);
+        $this->withHeader('X-Socket-ID', '1234.5678')->postJson("/api/v1/chats/{$chat->id}/messages", ['client_id' => (string) Str::uuid(), 'type' => 'text', 'content' => 'Hi'])->assertCreated();
+
+        Event::assertDispatched(MessageSent::class, fn (MessageSent $event) => $event->socket === '1234.5678');
     });
 
     it('moves the chat to the top of the list', function () {

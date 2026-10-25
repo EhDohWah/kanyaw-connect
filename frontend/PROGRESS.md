@@ -11,7 +11,7 @@ item they belong to.
 | 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), approved |
 | 4. Video | Done, approved |
 | 5. Push and polish | Done, approved |
-| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done; 6B done, waiting for review; 6C not started |
+| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done; 6B done; 6C done, waiting for review |
 
 ## Phase 1: Foundation
 
@@ -946,4 +946,100 @@ and the guide in section 8), which is now the contract 6C builds on.
 
 ### 6C · Calls in the app
 
-- [ ] Not started (waits for the review of 6B).
+- [x] **Architecture**: a `directCall` store and `DirectCallOverlay` in `App.vue` (loaded lazily), above every page, so
+  moving around never hangs up. It reuses `CallSession` and `localMedia` from the meetings (both now handle the speaker,
+  `audiooutput`, and `CallSession` reads one person's loudness). LiveKit is still loaded only when a call connects
+  (checked in the build: only the meeting page, `callSession` and `localMedia` import it). Route `/calls/:id` (for
+  notifications) opens the call over whatever is on screen.
+- [x] **State machine** (`utils/callOutcome.ts`, pure): `idle → starting → ringing → connecting → active → ended` and
+  `incoming → accepting → connecting → active → ended`, with the ending (hung up, declined, no answer, cancelled, missed,
+  busy, already in a call, answered elsewhere, gone, connection lost, failed) decided from your side. The caller connects
+  to LiveKit while it rings, so an answer goes straight to `active`. Anything that does not apply changes nothing.
+- [x] **Starting**: Voice call and Video call in the header of a direct chat that is not encrypted (disabled while a call
+  is on). The outgoing screen: their picture, "Calling…", ringback, your own camera behind it for video,
+  End. Busy, already in a call, no answer, declined and failed each have their own words; the caller's side offers
+  **Call again** and **Send a voice message** (opens the recorder in that chat). End pressed before the server answered
+  cancels the call the moment it exists.
+- [x] **Receiving**: full screen with their picture, Accept, Decline and (video) "Answer without video"; the ringtone
+  (two notes, 1 s on in every 3 s) and `vibrate([500, 250, 500])`; "Tap to hear ringing" until the first tap of the
+  session; closes at `ring_expires_at` (plus 1.5 s), on missed or declined, and on answered elsewhere ("Answered on
+  another device"). An incoming call stops a voice recording (it keeps what was recorded).
+  - **One ringing tab** (`realtime/tabLeader.ts`, `BroadcastChannel`): the visible tab focused most recently rings, the
+    others show a banner; answering or declining in one closes the rest; a tab that reloads asks whether another tab is
+    already in the call before joining (two would push each other out of LiveKit).
+  - **During a meeting**: a banner that vibrates but does not ring over the meeting, with Decline and "Leave meeting and
+    answer".
+- [x] **In the call**: video covers a phone held upright and is shown whole on its side; your picture is a mirrored PiP you
+  drag to a corner (it snaps), tap (or Enter/Space) to swap, arrow keys to move; when their camera is off, you see their
+  picture and your own small window. The name and timer fade after 3 s and come back on a tap. Voice: their picture with
+  a ring that follows their loudness, and the connection quality in words. Controls: microphone, camera (video calls),
+  flip (with more than one camera), a speaker choice where `setSinkId` exists, End. Minimize to the "Return to call" bar
+  (also when you go to another page). Screen Wake Lock for the whole call, taken again when the page comes back.
+  - **Staying in step**: `GET /calls/current` on start and after every WebSocket reconnect: a ringing call shows, an
+    answered one is joined again, and one the server finished closes. A dropped LiveKit connection rejoins up to 3 times
+    (2 s, 4 s); after that the server is told (`end` or `cancel`) so the other person is not left waiting.
+  - "Call ended · 3:12" for 2 s, with the length the server measured.
+- [x] **Sound**: Web Audio tones (no sound files), unlocked by the first tap or key press of the session.
+- [x] **Settings → Calls**: Ringtone and Vibration (`call_ringtone`, `call_vibrate`, saved on the account).
+- [x] **Service worker**: `call.incoming` with a visible window of the app → that window is told (`kc:call`) and rings
+  itself; otherwise a notification that stays (`requireInteraction`), vibrates, and has **Answer** (opens
+  `/calls/<id>?answer=1`, which answers if it still rings) and **Decline** (`POST`s the signed `decline_url` without
+  opening anything). A push that arrives after `ring_expires_at` shows nothing. `call.missed` replaces the ringing
+  notification (same tag). The app closes the notification itself when the call stops ringing.
+- [x] **Call notices** in the chat, written from your side ("Missed voice call", "Declined video call", "Voice call · No
+  answer", "Video call · 3:12"), with an arrow, the danger colour for a call you missed, and **Call back**. The chat
+  list shows the same text.
+- [x] Tests for every transition, the resync, the tab election, the service worker's decisions and the notice text (below).
+
+Deviations:
+
+- With a window of the app visible, the service worker shows no notification for `call.incoming` (the window rings).
+  Chrome normally shows its own "This site has been updated in the background" notice when a push shows nothing, but not
+  while one of the site's pages is focused. That cannot be checked in the headless browser used here; if it shows up on
+  a real phone, the fix is to show a quiet notification and close it at once.
+- The ringtone is made in the browser (no sound file), so it cannot be changed without code.
+
+### Verification (6C)
+
+- Frontend: `npm run build`, `npm run type-check` and `npm run test` pass: **1415 tests in 94 files** (1236 before 6C).
+- Backend: `php artisan test` passes (**1253 tests**, 2 new) and Pint passes.
+- Real Chromium (two people, fake camera and microphone, the real API, Reverb and LiveKit): **43 checks pass** with no
+  console errors: ringing on both sides; axe on the incoming, outgoing, video, closing and phone screens; accept with video
+  both ways; the microphone toggle; the mirrored PiP; a reload during the call rejoins; minimize to the bar and back; End
+  with "Call ended · m:ss" and the chat notice with Call back; a voice call declined, then "Send a voice message" opening
+  the recorder; a missed call counted as unread and shown as "Voice call · Cancelled" for the caller; busy; two tabs (one
+  full screen, one banner; answering closes the banner and the other tab does not join); no call buttons in a group;
+  "Answer without video"; no sideways scroll at 390 px; Ringtone saved in Settings.
+- Mutation checks: **111 behaviours were broken on purpose, one at a time, and a test now fails for 110** (for example:
+  a second call replacing the live one, an answer going straight to active before the media, End while ringing counted
+  as hung up, a cancelled call shown as no answer, busy shown as failed, no Call again after declined, End while starting
+  forgotten, a call handled in another tab ringing again, "Answer without video" still sending video, a dropped call
+  tried only once, a closed room retried, giving up without telling the server, every tab ringing, the meeting banner
+  ringing out loud, no ringback, no wake lock, Call again after busy doing nothing, the ringer ignoring either setting or
+  leaving the phone vibrating, hidden tabs ringing over visible ones, a closed tab keeping the ring, call buttons in groups
+  or encrypted chats, a drag counted as a tap, a visible window still getting a notification, an expired push still
+  ringing, Decline opening the app, `?answer=1` dropped). The first run left 19: 18 were gaps in the tests, now filled
+  (the vibration setting, telling the other tabs on answer, closing the notification, the wake lock, the 1.5 s grace, a
+  banner-only call going away, a minimized call coming back to say it ended, the length from `answered_at`, the incoming
+  screen not minimizing, the ringing following the focus, the tab chatter, the "owner?" answer, a late wake lock, the
+  arrow keys on the small picture, the notification's Answer, and three rules of the state machine). The one left is
+  equivalent: a tab ignoring its own "handled" message, which a `BroadcastChannel` never delivers to its sender anyway.
+
+### Real problems found while building 6C (all fixed, with a test)
+
+1. The call's summary message never reached the device whose request ended the call: the server left out the sender's
+   connection (`X-Socket-ID`) for every `message.sent`, system messages included. Fixed on the server (below).
+2. After the callee answered without video, the caller's own camera stayed as the big picture behind the call. Your own
+   camera is now the backdrop only while it rings; afterwards it is the small window.
+3. "Call again" did nothing after "busy" (a refused start leaves no call to look at), and the busy screen said "Someone":
+   the store now remembers what was dialled, and the chat says who it was for.
+4. The `409 call_not_ringing` body (which holds the call) was lost on the way: `ApiError` now keeps the response body.
+
+### Backend changes and notes from 6C
+
+- Changed: system messages are broadcast to every device, including the one whose request caused them
+  (`ChatBroadcaster`, `socket = null` when the message has no sender). This also fixes the meeting host's own device not
+  getting the "meeting started" notice. Two tests; noted in `docs/API.md` section 4.3.
+- Gaps left as the prompt says: no list of past calls (the notices are the history), no switching between voice and
+  video during a call, and no calls in end-to-end encrypted chats from the app (the server allows them; the buttons are
+  hidden there).

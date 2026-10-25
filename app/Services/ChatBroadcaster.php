@@ -34,9 +34,13 @@ class ChatBroadcaster
     /** The Pusher protocol allows at most 100 channels per published event. */
     private const MAX_CHANNELS_PER_EVENT = 100;
 
+    /**
+     * A message written by the server (a call's outcome, "started a video meeting") goes to every device, the one whose
+     * request caused it included: unlike a person's own message, that device has no copy of it yet.
+     */
     public function messageSent(Message $message): void
     {
-        $this->send(MessageSent::class, $message->chat_id, $this->messagePayload($message), $this->memberIds($message->chat_id));
+        $this->send(MessageSent::class, $message->chat_id, $this->messagePayload($message), $this->memberIds($message->chat_id), everyone: $message->sender_id === null);
     }
 
     public function messageUpdated(Message $message): void
@@ -97,8 +101,9 @@ class ChatBroadcaster
      * @param  class-string<ChatBroadcastEvent>  $event
      * @param  array<string, mixed>  $payload
      * @param  list<string>  $userIds
+     * @param  bool  $everyone  also to the device whose request caused it (see messageSent)
      */
-    private function send(string $event, string $chatId, array $payload, array $userIds = [], bool $toChat = true): void
+    private function send(string $event, string $chatId, array $payload, array $userIds = [], bool $toChat = true, bool $everyone = false): void
     {
         $chunks = array_chunk($userIds, self::MAX_CHANNELS_PER_EVENT - 1) ?: [[]];
 
@@ -106,7 +111,11 @@ class ChatBroadcaster
             $withChat = $toChat && $i === 0;
 
             if ($chunk !== [] || $withChat) {
-                event(new $event($chatId, $payload, $chunk, $withChat));
+                $instance = new $event($chatId, $payload, $chunk, $withChat);
+                if ($everyone) {
+                    $instance->socket = null;
+                }
+                event($instance);
             }
         }
     }

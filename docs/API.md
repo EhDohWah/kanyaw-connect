@@ -2005,7 +2005,7 @@ Rules that apply to every event:
 
 - You can receive an event twice (for example `message.sent` arrives on both `private-chat.X` and `private-user.{me}`): de-duplicate by `id`.
 - Events can arrive out of order or be missed while offline. Treat them as hints, and repair state from the REST API after reconnecting.
-- The connection that caused a change is not sent its own event if it passed `X-Socket-ID`; your other devices still receive it.
+- The connection that caused a change is not sent its own event if it passed `X-Socket-ID`; your other devices still receive it (Except `message.sent` for a `system` message, such as a call's summary: it reaches every device, because the one that caused it has no copy.)
 - Payloads are built when the change happens, so they show the state at that moment.
 
 ### `message.sent`

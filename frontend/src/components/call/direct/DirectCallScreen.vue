@@ -32,8 +32,11 @@ const theirVideo = computed(() => call.remote?.cameraTrack ?? null)
 const myVideo = computed(() => call.local?.cameraTrack ?? null)
 /** Their video fills the screen: a video call with their camera on. Otherwise their picture (the voice layout). */
 const videoLayout = computed(() => call.kind === 'video' && theirVideo.value !== null)
+const ringing = computed(() => call.phase === 'starting' || call.phase === 'ringing')
 /** Ringing a video call: your own camera behind their name, as a mirror. */
-const previewBehind = computed(() => call.kind === 'video' && !videoLayout.value && myVideo.value !== null)
+const previewBehind = computed(() => call.kind === 'video' && ringing.value && myVideo.value !== null)
+/** In the call with their camera off: your own camera stays in the corner (nothing to swap with). */
+const selfOnly = computed(() => call.kind === 'video' && !videoLayout.value && !ringing.value && myVideo.value !== null)
 
 const swapped = ref(false)
 const corner = ref<Corner>('bottom-right')
@@ -101,6 +104,8 @@ function onSpeakerChange(event: Event): void {
     <div v-else-if="previewBehind && myVideo" class="absolute inset-0 opacity-60">
       <TrackVideo :track="myVideo" mirror />
     </div>
+
+    <SelfPreview v-if="selfOnly && myVideo" v-model:corner="corner" :track="myVideo" mirror :label="t('directCall.yourVideo')" />
 
     <!-- Voice layout (also a video call with their camera off) -->
     <div v-if="!videoLayout" class="relative flex h-full flex-col items-center justify-center gap-4 px-6 text-center">

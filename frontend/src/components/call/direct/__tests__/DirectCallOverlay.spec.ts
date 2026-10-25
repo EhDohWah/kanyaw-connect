@@ -248,6 +248,37 @@ describe('your call', () => {
     expect(wrapper.findAll('video')[0]!.classes()).not.toContain('-scale-x-100') // a drag is not a tap
   })
 
+  it('the arrow keys move the small picture to another corner', async () => {
+    const { wrapper } = await mount()
+    await useDirectCallStore().start(CHAT_ID, 'video')
+    await settle()
+    lastRoom().addPerson(PAW, 'Naw Paw')
+    await settle()
+
+    await button(wrapper, 'Swap videos')!.trigger('keydown', { key: 'ArrowUp' })
+    expect(button(wrapper, 'Swap videos')!.classes()).toEqual(expect.arrayContaining(['top-20', 'right-4']))
+    await button(wrapper, 'Swap videos')!.trigger('keydown', { key: 'ArrowLeft' })
+    expect(button(wrapper, 'Swap videos')!.classes()).toEqual(expect.arrayContaining(['top-20', 'left-4']))
+  })
+
+  it('over video, the name and controls fade after 3 seconds without a touch, and come back on one', async () => {
+    const { wrapper } = await mount()
+    await useDirectCallStore().start(CHAT_ID, 'video')
+    await settle()
+    vi.useFakeTimers()
+    lastRoom().addPerson(PAW, 'Naw Paw')
+    await vi.advanceTimersByTimeAsync(0)
+
+    const controls = () => wrapper.get('[role=dialog] [role=group]')
+    expect(controls().classes()).toContain('opacity-100')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(controls().classes()).toContain('opacity-0')
+
+    await wrapper.get('[role=dialog] > div').trigger('pointerdown')
+    expect(controls().classes()).toContain('opacity-100')
+    vi.useRealTimers()
+  })
+
   it('with their camera off: their picture, and says so', async () => {
     const { wrapper } = await mount()
     await useDirectCallStore().start(CHAT_ID, 'video')

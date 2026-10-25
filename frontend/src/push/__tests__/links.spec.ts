@@ -3,10 +3,11 @@ import { createMemoryHistory } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useFakePush } from '@/__tests__/fakePush'
-import { ME, fakeApi, makeUser, restoreApi, settle, signIn } from '@/__tests__/helpers'
+import { ME, PAW, fakeApi, makeUser, person, restoreApi, settle, signIn } from '@/__tests__/helpers'
 import { callTarget, installServiceWorkerMessages, notificationRoute } from '@/push/links'
 import { createAppRouter } from '@/router'
 import { useAuthStore } from '@/stores/auth'
+import { useDirectCallStore } from '@/stores/directCall'
 import { PUSH_OWNER_KEY, usePushStore } from '@/stores/push'
 import { useUiStore } from '@/stores/ui'
 
@@ -116,6 +117,31 @@ describe('messages from the service worker', () => {
     await vi.waitFor(() => expect(api.calls.map((c) => c.url)).toContain(`/calls/${CALL}`))
     expect(router.currentRoute.value.path).toBe(`/rooms/${ROOM}`)
     expect(useUiStore().toasts).toHaveLength(0)
+  })
+
+  it("a call notification's Answer button answers the call if it still rings", async () => {
+    const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
+    const { fake } = await setUp()
+    const ringing = {
+      id: CALL,
+      chat_id: CHAT,
+      room_id: ROOM,
+      kind: 'voice',
+      status: 'ringing',
+      end_reason: null,
+      caller: person(PAW, 'Naw Paw'),
+      callee: person(ME, 'Saw Eh Doh'),
+      created_at: new Date().toISOString(),
+      ring_expires_at: new Date(Date.now() + 45_000).toISOString(),
+      answered_at: null,
+      ended_at: null,
+      duration_seconds: null,
+    }
+    const api = fakeApi((call) => (call.url === `/calls/${CALL}` ? { data: { data: ringing } } : { status: 500, data: {} }))
+
+    fake.send({ type: 'kc:open', url: `${here}/calls/${CALL}?answer=1` })
+    await vi.waitFor(() => expect(api.calls.map((c) => `${c.method} ${c.url}`)).toContain(`post /calls/${CALL}/accept`))
+    useDirectCallStore().reset()
   })
 
   it('already on that page: nothing happens (and no toast during the meeting it announces)', async () => {

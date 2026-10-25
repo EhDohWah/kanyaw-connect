@@ -22,6 +22,12 @@ vi.mock('@/composables/useVoiceRecorder', async (importOriginal) => ({
   interruptRecording: interrupt,
 }))
 
+const closeNotification = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/push/browser', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/push/browser')>()),
+  closeCallNotification: closeNotification,
+}))
+
 useFakeLiveKit()
 
 const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
@@ -88,6 +94,7 @@ beforeEach(() => {
   useAuthStore().user = makeUser({ id: ME })
   realtime.connect('t', ME, userChannelHandlers(), { status: (status) => useRealtimeStore().setStatus(status), connected: () => undefined })
   interrupt.mockClear()
+  closeNotification.mockClear()
   tabLeader.leader.value = true
 })
 
@@ -625,5 +632,149 @@ describe('staying in step', () => {
     expect(call.phase).toBe('idle')
     expect(call.call).toBeNull()
     expect(sent(calls)).toContain(`post /calls/${CALL}/cancel`)
+  })
+})
+
+describe('ringing, closing and the screen', () => {
+  it('Vibration off in Settings: rings without vibrating', () => {
+    serve()
+    const ring = vi.spyOn(ringer, 'ring')
+    useAuthStore().user = makeUser({ id: ME, settings: { call_vibrate: false } })
+    useDirectCallStore()
+
+    hear('incoming', incomingCall())
+
+    expect(ring).toHaveBeenCalledWith({ sound: true, vibrate: false })
+  })
+
+  it('starts ringing when the focus moves to this tab while it rings', async () => {
+    serve()
+    const ring = vi.spyOn(ringer, 'ring')
+    tabLeader.leader.value = false
+    useDirectCallStore()
+    hear('incoming', incomingCall())
+    await settle()
+    expect(ring).not.toHaveBeenCalled()
+
+    // The other tab lost the focus to this one (a moment later, as in a browser).
+    tabLeader.leader.value = true
+    await settle()
+
+    expect(ring).toHaveBeenCalledWith({ sound: true, vibrate: true })
+  })
+
+  it('answering or declining tells the other tabs of this browser', async () => {
+    serve()
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    stopTabs = tabLeader.start()
+    const otherTab = new TabLeader(fakeChannelFactory)
+    const stopOther = otherTab.start()
+    const heard: string[] = []
+    otherTab.onHandled(({ callId, how }) => heard.push(`${how} ${callId}`))
+    const call = useDirectCallStore()
+
+    hear('incoming', incomingCall())
+    await call.accept()
+    await settle()
+    call.reset()
+    hear('incoming', incomingCall({ id: 'second' }))
+    call.decline()
+    await settle()
+
+    expect(heard).toEqual([`answered ${CALL}`, 'declined second'])
+    stopOther()
+  })
+
+  it('closes the ringing notification once the call stops ringing here', async () => {
+    serve()
+    const call = useDirectCallStore()
+    hear('incoming', incomingCall())
+    expect(closeNotification).not.toHaveBeenCalled()
+
+    await call.accept()
+
+    expect(closeNotification).toHaveBeenCalledWith(CALL)
+  })
+
+  it('keeps the screen on for the whole call, and lets it go at the end', async () => {
+    const release = vi.fn(async () => undefined)
+    const request = vi.fn(async () => ({ released: false, release }))
+    Object.defineProperty(navigator, 'wakeLock', { value: { request }, configurable: true })
+    try {
+      serve()
+      const call = useDirectCallStore()
+      await call.start(CHAT_ID, 'voice')
+      await settle()
+      expect(request).toHaveBeenCalledWith('screen')
+
+      call.hangUp()
+      await settle()
+      expect(release).toHaveBeenCalled()
+    } finally {
+      Reflect.deleteProperty(navigator, 'wakeLock')
+    }
+  })
+
+  it('keeps ringing a moment past ring_expires_at (the server has the last word)', () => {
+    vi.useFakeTimers()
+    serve()
+    const call = useDirectCallStore()
+    hear('incoming', incomingCall())
+
+    vi.advanceTimersByTime(45_000 + EXPIRY_GRACE_MS - 100)
+    expect(call.phase).toBe('incoming')
+    vi.advanceTimersByTime(100)
+    expect(call.ending).toBe('missed')
+  })
+
+  it('a call that only rang as a banner (in a meeting, or another tab) just goes away when it ends', () => {
+    serve()
+    useUiStore().callOpen = true
+    const call = useDirectCallStore()
+    hear('incoming', incomingCall())
+    hear('missed', incomingCall({ status: 'missed', end_reason: 'cancelled' }))
+    expect(call.phase).toBe('idle')
+
+    useUiStore().callOpen = false
+    tabLeader.leader.value = false
+    hear('incoming', incomingCall({ id: 'second' }))
+    hear('missed', incomingCall({ id: 'second', status: 'missed', end_reason: 'cancelled' }))
+    expect(call.phase).toBe('idle')
+  })
+
+  it('a call that ends while minimized comes back full screen to say so', async () => {
+    serve()
+    const call = useDirectCallStore()
+    await call.start(CHAT_ID, 'voice')
+    await settle()
+    hear('accepted', answered())
+    call.minimize()
+    expect(call.expanded).toBe(false)
+
+    hear('ended', makeCall({ status: 'ended', end_reason: 'hung_up', duration_seconds: 12 }))
+
+    expect(call.expanded).toBe(true)
+    expect(call.phase).toBe('ended')
+  })
+
+  it('works the length out from answered_at when the server gave none', async () => {
+    serve()
+    const call = useDirectCallStore()
+    await call.start(CHAT_ID, 'voice')
+    await settle()
+    const answeredAt = new Date(Date.now() - 75_000).toISOString()
+    hear('accepted', answered({ answered_at: answeredAt }))
+
+    hear('ended', makeCall({ status: 'ended', end_reason: 'hung_up', answered_at: answeredAt, duration_seconds: null }))
+
+    expect(call.endedSeconds).toBe(75)
+  })
+
+  it('the incoming screen cannot be minimized (it has to be answered or declined)', () => {
+    serve()
+    const call = useDirectCallStore()
+    hear('incoming', incomingCall())
+    call.minimize()
+    expect(call.expanded).toBe(true)
   })
 })

@@ -87,6 +87,12 @@ describe('an outgoing call', () => {
     expect(transition(run({ type: 'start' }, { type: 'started' }, { type: 'answered' }), { type: 'connection-lost' }).ending).toBe('connection-lost')
   })
 
+  it('cannot lose a connection it never had: ringing without the media ignores a drop', () => {
+    const ringing = run({ type: 'start' }, { type: 'started' })
+    expect(transition(ringing, { type: 'connection-lost' })).toBe(ringing)
+    expect(transition(transition(ringing, { type: 'media-ready' }), { type: 'connection-lost' }).ending).toBe('connection-lost')
+  })
+
   it('fails when it cannot connect', () => {
     expect(transition(run({ type: 'start' }, { type: 'started' }), { type: 'failed' }).ending).toBe('failed')
   })
@@ -133,6 +139,15 @@ describe('an incoming call', () => {
   it('is never "answered" by the other person appearing (that is for the caller)', () => {
     const incoming = run({ type: 'incoming' })
     expect(transition(incoming, { type: 'answered' })).toBe(incoming)
+    const connecting = run({ type: 'incoming' }, { type: 'accept' }, { type: 'accepted' })
+    expect(transition(connecting, { type: 'answered' })).toBe(connecting)
+  })
+
+  it('once answered here, news that it was answered (here) does not close it', () => {
+    const connecting = run({ type: 'incoming' }, { type: 'accept' }, { type: 'accepted' })
+    expect(transition(connecting, { type: 'answered-elsewhere' })).toBe(connecting)
+    const live = transition(connecting, { type: 'media-ready' })
+    expect(transition(live, { type: 'answered-elsewhere' })).toBe(live)
   })
 })
 

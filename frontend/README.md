@@ -166,6 +166,34 @@ with one thumb, a keyboard and a screen reader.
 - Where the browser has no MediaRecorder or no microphone, there is no microphone button; an audio file can still be sent
   with the attach button.
 
+## Calls
+
+A direct chat's header has **Voice call** and **Video call** buttons (not in groups, and not in end-to-end encrypted
+chats). A call is drawn above every page (`DirectCallOverlay` in `App.vue`), so moving around the app never hangs up:
+the call shrinks to a bar at the top, "Return to call". The rules of a call (ringing, answered, ended, and why) are pure
+functions in `src/utils/callOutcome.ts`; `src/stores/directCall.ts` talks to the API, LiveKit, the ringer and the other
+tabs. The video library is still loaded only when a call connects.
+
+- **Ringing:** an incoming call is a full screen with Accept, Decline and (for a video call) "Answer without video". The
+  ringtone and ringback are made in the browser with the Web Audio API (no sound files); phones also vibrate. Browsers
+  play no sound until the page has been tapped once, so a call before that rings silently and says "Tap to hear ringing".
+  **Settings → Calls** turns the ringtone and the vibration off (`settings.call_ringtone`, `settings.call_vibrate`).
+- **Several tabs:** only one tab rings, the visible one used most recently (the tabs agree over a `BroadcastChannel`);
+  the others show a small banner. Answering or declining in one closes them all. During a meeting a call is a quiet banner
+  with "Leave meeting and answer". An incoming call stops a voice recording and keeps what was recorded.
+- **In a call:** video fills a phone held upright and is shown whole on its side; your own picture is a small mirrored
+  window you can drag to any corner or tap to swap with theirs. A voice call shows their picture with a ring that follows
+  their voice, and the connection quality in words. Microphone, camera, flip camera (with more than one camera), a speaker choice (where
+  the browser allows it, mostly desktop Chrome and Edge), and End. The screen stays on during a call (Screen Wake Lock).
+- **Dropped connections and reloads:** the app asks the server for the current call when it starts and after every
+  reconnect, so a reload rejoins the call, and a call that ended meanwhile closes. A dropped call rejoins up to three times.
+- **When the app is closed:** the call arrives as a notification with Answer and Decline (Decline works without opening
+  the app); "Missed call" replaces it if nobody answers. With a window of the app visible, that window rings instead.
+- **In the chat:** every call leaves a line written from your side ("Missed voice call", "Video call · 3:12") with Call
+  back; the chat list shows the same text.
+- There is no list of past calls (the chat lines are the history), no switching between voice and video during a call,
+  and no calls in end-to-end encrypted chats.
+
 ## Notifications
 
 When the app is closed, new messages and meeting invitations arrive as notifications (web push). Each person turns them
