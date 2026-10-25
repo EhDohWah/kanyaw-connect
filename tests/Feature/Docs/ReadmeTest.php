@@ -19,7 +19,7 @@ function projectEnvKeys(): array
 {
     $keys = [];
 
-    foreach (['cors', 'e2ee', 'push', 'cleanup', 'security', 'rooms', 'chat', 'sanctum'] as $file) {
+    foreach (['cors', 'e2ee', 'push', 'cleanup', 'security', 'rooms', 'calls', 'chat', 'sanctum'] as $file) {
         preg_match_all("/env\('([A-Z0-9_]+)'/", file_get_contents(dirname(__DIR__, 3)."/config/{$file}.php"), $m);
         array_push($keys, ...$m[1]);
     }

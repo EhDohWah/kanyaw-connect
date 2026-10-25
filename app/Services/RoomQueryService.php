@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\RoomAdmission;
 use App\Enums\RoomStatus;
+use App\Models\Call;
 use App\Models\Room;
 use App\Models\RoomParticipant;
 use App\Models\User;
@@ -18,7 +19,7 @@ class RoomQueryService
 {
     /**
      * The user's rooms that have not ended: ones they host, are invited to through a chat, or have
-     * asked to join.
+     * asked to join. The rooms behind one-to-one calls are not listed.
      *
      * filter=hosting   only rooms they host
      * filter=invited   only rooms hosted by someone else
@@ -28,7 +29,8 @@ class RoomQueryService
     {
         $query = $this->base()
             ->visibleTo($user)
-            ->where('rooms.status', '!=', RoomStatus::Ended->value);
+            ->where('rooms.status', '!=', RoomStatus::Ended->value)
+            ->whereNotIn('rooms.id', Call::query()->select('room_id')); // calls are not meetings
 
         match ($filter) {
             'hosting' => $query->where('rooms.host_id', $user->getKey()),

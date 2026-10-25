@@ -76,6 +76,14 @@
       "value": ""
     },
     {
+      "key": "callId",
+      "value": ""
+    },
+    {
+      "key": "callRoomId",
+      "value": ""
+    },
+    {
       "key": "deviceId",
       "value": ""
     },
@@ -1954,6 +1962,301 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Calls",
+      "item": [
+        {
+          "name": "Start a video call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chats/{{chatId}}/calls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "chats",
+                "{{chatId}}",
+                "calls"
+              ]
+            },
+            "description": "Rings the other person of the direct chat (`chatId`) for 45 seconds. Saves `callId` and `callRoomId`. `kind` is `voice` or `video`. 409 `already_in_call` / `callee_busy` when one of you is in a call; 403 for a group chat. Limit: 10 a minute.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"video\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My current call",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "current"
+              ]
+            },
+            "description": "Your ringing or ongoing call, or `{ \"data\": null }`. Apps ask this on start and after every reconnect. Saves `callId` when there is one."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Show a call",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/{{callId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "{{callId}}"
+              ]
+            },
+            "description": "Only the two people in it can see it (others get 404)."
+          },
+          "response": []
+        },
+        {
+          "name": "Join the call's room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/{{callRoomId}}/join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rooms",
+                "{{callRoomId}}",
+                "join"
+              ]
+            },
+            "description": "The caller may join while it rings; both may join once it is answered. A voice call's token publishes the microphone only."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept (as the callee)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/{{callId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "{{callId}}",
+                "accept"
+              ]
+            },
+            "description": "Log in as the other person first (change `email`), then run **My current call** to get the `callId`. 409 `call_not_ringing` once it was declined, cancelled or missed."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Decline (as the callee)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/{{callId}}/decline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "{{callId}}",
+                "decline"
+              ]
+            },
+            "description": "The service worker declines with the signed `decline_url` from the incoming-call push instead, without a token."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel (as the caller, while it rings)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/{{callId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "{{callId}}",
+                "cancel"
+              ]
+            },
+            "description": "The call becomes `missed` with `end_reason: cancelled`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hang up (either person, once answered)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/calls/{{callId}}/end",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "calls",
+                "{{callId}}",
+                "end"
+              ]
+            },
+            "description": "The call becomes `ended` with `end_reason: hung_up`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('call returned', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj) { if (obj.id) { pm.collectionVariables.set('callId', obj.id); } if (obj.room_id) { pm.collectionVariables.set('callRoomId', obj.room_id); } }"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "One-to-one calls in a direct chat. Use two accounts: start as user1, then log in as the other person to accept or decline. See section 8 of docs/API.md."
     },
     {
       "name": "Encryption: devices and keys",

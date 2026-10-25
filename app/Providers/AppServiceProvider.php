@@ -97,5 +97,11 @@ class AppServiceProvider extends ServiceProvider
 
         // 30 messages per minute per user, across all chats.
         RateLimiter::for('messages', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
+
+        // Starting calls: enough to redial a few times, not enough to ring someone's phone non-stop.
+        RateLimiter::for('calls', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+
+        // The signed decline link works without a bearer token, so it is limited per address too.
+        RateLimiter::for('call-answers', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
     }
 }

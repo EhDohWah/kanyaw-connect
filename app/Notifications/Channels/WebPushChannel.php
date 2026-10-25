@@ -6,7 +6,7 @@ use App\Actions\Push\DeliverPush;
 use App\Enums\PushOutcome;
 use App\Jobs\RetryWebPush;
 use App\Models\User;
-use App\Notifications\NewMessageNotification;
+use App\Notifications\Contracts\WebPushMessage;
 use App\Services\WebPushService;
 
 /**
@@ -16,17 +16,20 @@ class WebPushChannel
 {
     public function __construct(private WebPushService $push, private DeliverPush $deliver) {}
 
-    public function send(User $notifiable, NewMessageNotification $notification): void
+    public function send(User $notifiable, WebPushMessage $notification): void
     {
         if (! $this->push->isConfigured()) {
             return;
         }
 
         $payload = $notification->toWebPush($notifiable);
+        $options = $notification->webPushOptions();
+        $retry = $options['retry'] ?? true;
+        unset($options['retry']);
 
         foreach ($notifiable->pushSubscriptions()->get() as $subscription) {
-            if ($this->deliver->handle($subscription, $payload) === PushOutcome::Failed) {
-                RetryWebPush::dispatch($subscription->getKey(), $payload)->delay(30);
+            if ($this->deliver->handle($subscription, $payload, $options) === PushOutcome::Failed && $retry) {
+                RetryWebPush::dispatch($subscription->getKey(), $payload, $options)->delay(30);
             }
         }
     }

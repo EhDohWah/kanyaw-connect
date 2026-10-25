@@ -6,6 +6,7 @@ use App\Enums\ChatType;
 use App\Enums\MessageType;
 use App\Models\Message;
 use App\Notifications\Channels\WebPushChannel;
+use App\Notifications\Contracts\WebPushMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
@@ -19,7 +20,7 @@ use Illuminate\Support\Str;
  * (The chat and message ids are in the payload so the app can open the right conversation; the
  * payload itself is encrypted so that only the browser can read it, not the push service.)
  */
-class NewMessageNotification extends Notification implements ShouldQueue
+class NewMessageNotification extends Notification implements ShouldQueue, WebPushMessage
 {
     use Queueable;
 
@@ -89,6 +90,12 @@ class NewMessageNotification extends Notification implements ShouldQueue
     public function toWebPush(object $notifiable): array
     {
         return $this->payload;
+    }
+
+    /** The defaults from config/push.php. */
+    public function webPushOptions(): array
+    {
+        return [];
     }
 
     private static function preview(Message $message): string

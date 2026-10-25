@@ -63,8 +63,12 @@ class LiveKitService
      *
      * Identity is the user's UUID, so webhooks map straight back to users. Hosts and co-hosts get
      * roomAdmin. Pure computation: no network call.
+     *
+     * @param  list<string>|null  $publishSources  limit what may be published, e.g. ['microphone'] for a
+     *                                             voice call (LiveKit's names: camera, microphone,
+     *                                             screen_share, screen_share_audio); null for anything
      */
-    public function generateToken(User $user, Room $room, RoomRole $role): string
+    public function generateToken(User $user, Room $room, RoomRole $role, ?array $publishSources = null): string
     {
         $grant = (new VideoGrant)
             ->setRoomJoin()
@@ -72,6 +76,10 @@ class LiveKitService
             ->setCanPublish()
             ->setCanSubscribe()
             ->setCanPublishData();
+
+        if ($publishSources !== null) {
+            $grant->setCanPublishSources($publishSources);
+        }
 
         if ($role === RoomRole::Host || $role === RoomRole::CoHost) {
             $grant->setRoomAdmin();

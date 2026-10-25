@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -73,6 +74,12 @@ class Room extends Model
         return $this->belongsTo(Chat::class);
     }
 
+    /** The one-to-one call this room carries, if it is a call room. */
+    public function call(): HasOne
+    {
+        return $this->hasOne(Call::class);
+    }
+
     public function participants(): HasMany
     {
         return $this->hasMany(RoomParticipant::class);
@@ -97,6 +104,12 @@ class Room extends Model
     public function hasEnded(): bool
     {
         return $this->status === RoomStatus::Ended;
+    }
+
+    /** Does this room carry a one-to-one call (rather than a meeting)? */
+    public function isCallRoom(): bool
+    {
+        return $this->call !== null;
     }
 
     /** The user's row for this room, or null if they never asked to join. Cached per instance. */

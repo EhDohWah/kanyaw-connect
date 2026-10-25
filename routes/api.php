@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AttachmentController;
 use App\Http\Controllers\Api\V1\AttachmentFileController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CallController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\ChatMemberController;
 use App\Http\Controllers\Api\V1\ChatReadController;
@@ -33,6 +34,10 @@ Route::prefix('v1')->group(function () {
         Route::get('attachments/{attachment}/thumbnail', [AttachmentFileController::class, 'thumbnail'])->name('attachments.thumbnail');
     });
 
+    // Declining a call: by the callee with a bearer token, or by the service worker with the signed
+    // decline_url from the incoming-call push (it has no token). The controller checks which.
+    Route::post('calls/{call}/decline', [CallController::class, 'decline'])->name('calls.decline')->middleware('throttle:call-answers');
+
     // Called by the LiveKit server, not by clients: authorised by the signature on the request.
     Route::post('webhooks/livekit', LiveKitWebhookController::class);
 
@@ -62,7 +67,15 @@ Route::prefix('v1')->group(function () {
             Route::post('messages', [MessageController::class, 'store'])->middleware('throttle:messages');
             Route::post('read', [ChatReadController::class, 'store']);
             Route::post('attachments', [AttachmentController::class, 'store']);
+            Route::post('calls', [CallController::class, 'store'])->middleware(['can:call,chat', 'throttle:calls']);
         });
+
+        // One-to-one calls. Only the two people in a call can see it (others get 404).
+        Route::get('calls/current', [CallController::class, 'current']);
+        Route::get('calls/{call}', [CallController::class, 'show'])->middleware('can:view,call');
+        Route::post('calls/{call}/accept', [CallController::class, 'accept'])->middleware('can:answer,call');
+        Route::post('calls/{call}/cancel', [CallController::class, 'cancel'])->middleware('can:cancel,call');
+        Route::post('calls/{call}/end', [CallController::class, 'end'])->middleware('can:end,call');
 
         // End-to-end encryption: the server is a key directory. Only public keys are ever sent here.
         Route::get('devices', [DeviceController::class, 'index']);

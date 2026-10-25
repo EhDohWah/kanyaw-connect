@@ -2,10 +2,15 @@
 
 namespace App\Actions\Rooms;
 
+use App\Actions\Calls\FinishCall;
+use App\Enums\CallEndReason;
+use App\Enums\CallStatus;
 use App\Enums\RoomAdmission;
 use App\Enums\RoomRole;
 use App\Enums\RoomStatus;
+use App\Jobs\EndCallAfterGrace;
 use App\Jobs\TransferRoomHostJob;
+use App\Models\Call;
 use App\Models\Room;
 use App\Models\User;
 use App\Services\LiveKitService;
@@ -27,6 +32,7 @@ class HandleLiveKitWebhook
         private RoomBroadcaster $broadcaster,
         private TransferRoomHost $transferHost,
         private EndRoom $endRoom,
+        private FinishCall $finishCall,
     ) {}
 
     public function handle(WebhookEvent $event): void
@@ -126,9 +132,30 @@ class HandleLiveKitWebhook
             $this->broadcaster->participantLeft($room, $user, $left->role);
         }
 
+        if ($call = $room->call) {
+            // A call has no host to hand on; what matters is whether the person comes back.
+            if ($call->status === CallStatus::Ongoing) {
+                $this->scheduleCallEnd($call, $identity);
+            }
+
+            return;
+        }
+
         if ($left->role === RoomRole::Host) {
             $this->scheduleHostTransfer($room, $identity);
         }
+    }
+
+    /**
+     * Someone dropped out of an answered call. Give them calls.reconnect_grace_seconds to come back
+     * (a phone switching from wifi to mobile data, a tunnel) before the call ends as connection_lost.
+     */
+    private function scheduleCallEnd(Call $call, string $userId): void
+    {
+        $job = new EndCallAfterGrace($call->getKey(), $userId);
+        $grace = config('calls.reconnect_grace_seconds');
+
+        $grace > 0 ? dispatch($job)->delay(now()->addSeconds($grace)) : dispatch_sync($job);
     }
 
     private function scheduleHostTransfer(Room $room, string $previousHostId): void
@@ -150,6 +177,13 @@ class HandleLiveKitWebhook
      */
     private function roomFinished(Room $room): void
     {
+        // An answered call cannot go on without its room. This closes our room too (FinishCall).
+        if ($room->call?->status === CallStatus::Ongoing) {
+            $this->finishCall->handle($room->call, CallStatus::Ended, CallEndReason::ConnectionLost, [CallStatus::Ongoing]);
+
+            return;
+        }
+
         if ($room->status !== RoomStatus::Active) {
             return;
         }

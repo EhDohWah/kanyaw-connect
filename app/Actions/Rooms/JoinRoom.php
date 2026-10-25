@@ -2,10 +2,12 @@
 
 namespace App\Actions\Rooms;
 
+use App\Enums\CallStatus;
 use App\Enums\RoomAdmission;
 use App\Enums\RoomRole;
 use App\Enums\RoomStatus;
 use App\Exceptions\RoomConflictException;
+use App\Models\Call;
 use App\Models\Room;
 use App\Models\RoomParticipant;
 use App\Models\User;
@@ -40,6 +42,10 @@ class JoinRoom
 
             if ($locked->hasEnded()) {
                 throw RoomConflictException::ended();
+            }
+
+            if ($call = $locked->call) {
+                $this->checkCallIsOpenTo($call, $user);
             }
 
             /** @var RoomParticipant|null $participant */
@@ -96,6 +102,43 @@ class JoinRoom
             $this->livekit->createRoom($room);
         }
 
-        return ['status' => 'admitted', 'token' => $this->livekit->generateToken($user, $room, $role)];
+        return ['status' => 'admitted', 'token' => $this->token($room, $user, $role)];
+    }
+
+    /**
+     * The caller may connect while it rings (so their camera and microphone are ready the moment it
+     * is answered); both may connect once it is answered. Before the callee answers, and after the
+     * call is over, the room is closed to them.
+     *
+     * @throws RoomConflictException room_ended
+     */
+    private function checkCallIsOpenTo(Call $call, User $user): void
+    {
+        $open = match ($call->status) {
+            CallStatus::Ringing => $user->getKey() === $call->caller_id && ! $call->ringExpired(),
+            CallStatus::Ongoing => true,
+            default => false,
+        };
+
+        if (! $open) {
+            throw $call->status === CallStatus::Ringing
+                ? new RoomConflictException('room_ended', 'Answer the call before joining it.')
+                : RoomConflictException::ended();
+        }
+    }
+
+    /**
+     * In a call nobody gets host powers in LiveKit (neither can mute or remove the other), and a
+     * voice call's token can publish the microphone only, so a camera can never be turned on in it.
+     */
+    private function token(Room $room, User $user, RoomRole $role): string
+    {
+        $call = $room->call;
+
+        if (! $call) {
+            return $this->livekit->generateToken($user, $room, $role);
+        }
+
+        return $this->livekit->generateToken($user, $room, RoomRole::Participant, $call->isVoice() ? ['microphone'] : null);
     }
 }

@@ -16,7 +16,7 @@ This repository holds the API (the Laravel app in the root folder) and the web f
 | Web server | FrankenPHP (Caddy with PHP built in) |
 | Tests, style | Pest, Laravel Pint |
 
-**What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · web push notifications · a room audit log · scheduled clean-up.
+**What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · one-to-one voice and video calls that ring, with missed-call notices · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · web push notifications · a room audit log · scheduled clean-up.
 
 ## Contents
 
@@ -135,7 +135,7 @@ One image (`Dockerfile`) is used for every PHP part of the app. A container's jo
 | `migrate` | Runs once: migrations, and demo data in an empty database | none | The other services wait for it |
 | `app` | The API (FrankenPHP: Caddy with PHP) | `http://localhost:8000` | No API |
 | `reverb` | Real-time updates (websockets) | `ws://localhost:8080` and `ws://localhost:8000/app/...` | No live updates; the REST API still works |
-| `queue` | Queue worker: publishes live events, sends push notifications, makes thumbnails | none | Live events never arrive, no push, no thumbnails |
+| `queue` | Queue worker: publishes live events, sends push notifications, makes thumbnails, times out unanswered calls | none | Live events never arrive, no push, no thumbnails, unanswered calls are not marked missed on time |
 | `scheduler` | Runs the [scheduled jobs](#scheduled-jobs) every minute | none | Users never go offline, clean-up never runs |
 | `livekit` | Video (WebRTC) | `ws://localhost:7880`, `7881/tcp`, `7882/udp` | Nobody can join a video room (`503`) |
 | `test` | The test suite; only started by `docker compose run --rm test` | none | |
@@ -235,7 +235,7 @@ Settings come from environment variables (`.env`). In production the Docker imag
 | `REVERB_ALLOWED_ORIGINS` | `*` | **Host names** of the pages allowed to open a WebSocket, comma separated, wildcards allowed: `chat.example.org,*.example.org`. Not URLs: no `https://`, no port. Only the host of the browser's `Origin` is compared. A client that sends no `Origin` (some native apps) is refused unless this is `*`. Set it to your frontend's host in production. |
 | `REVERB_MAX_REQUEST_SIZE` | `100000` | Largest event Reverb accepts, in bytes. 5000 Burmese or Karen characters are about 15 KB in UTF-8, so the library default of 10 KB is too small. |
 
-### Video (LiveKit) and rooms
+### Video (LiveKit), rooms and calls
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -244,6 +244,8 @@ Settings come from environment variables (`.env`). In production the Docker imag
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | development values | Must match the `keys:` entry in LiveKit's config (Docker development does that for you). The secret also signs webhooks. |
 | `LIVEKIT_TOKEN_TTL` | `3600` | Lifetime of a join token, seconds. |
 | `ROOM_HOST_TRANSFER_GRACE` | `0` | Seconds to wait before handing the host role on when the host's connection drops. A value such as `30` stops a brief mobile drop from costing the host their role. Needs the queue worker. |
+| `CALL_RING_SECONDS` | `45` | How long a one-to-one call rings before it counts as missed. The incoming-call push expires at the same moment. Needs the queue worker. |
+| `CALL_RECONNECT_GRACE` | `30` | Seconds a person may drop out of an answered call and come back before the call ends as `connection_lost`. Needs the queue worker. |
 
 ### Web push
 
@@ -275,7 +277,7 @@ All run through the scheduler (the `scheduler` container, or `schedule:work` / a
 | Command | When | What |
 |---|---|---|
 | `presence:mark-offline` | every minute | Marks users offline when their heartbeat (90 s) has expired |
-| `rooms:end-stale` | every 15 minutes | Ends video rooms that were left behind: never joined (a day after they were due), started but empty for an hour, or running for over 24 hours. Also closes them in LiveKit. |
+| `rooms:end-stale` | every 15 minutes | Ends video rooms that were left behind: never joined (a day after they were due), started but empty for an hour, or running for over 24 hours. Also closes them in LiveKit. Settles calls the queue worker missed: ringing past their time (missed) and answered calls that someone left for good (`connection_lost`). |
 | `attachments:purge-orphans` | hourly | Deletes uploads that were never attached to a message (older than 24 h), files included |
 | `messages:purge-deleted` | daily 03:10 | Permanently removes messages deleted more than 30 days ago, with their attachment files and encrypted copies |
 | `sanctum:prune-expired --hours=24` | daily 03:30 | Deletes expired login tokens (and with them the push subscriptions made under them) |

@@ -15,7 +15,7 @@ class FakeWebPushService extends WebPushService
 {
     public bool $configured = true;
 
-    /** @var list<array{subscription_id: string, user_id: string, endpoint: string, payload: array<string, mixed>}> */
+    /** @var list<array{subscription_id: string, user_id: string, endpoint: string, payload: array<string, mixed>, options: array<string, mixed>}> */
     public array $sent = [];
 
     /** @var array<string, PushOutcome> outcome per endpoint; anything not listed is Sent */
@@ -38,7 +38,7 @@ class FakeWebPushService extends WebPushService
         return $this->configured ? 'fake-public-key' : null;
     }
 
-    public function send(PushSubscription $subscription, array $payload): PushOutcome
+    public function send(PushSubscription $subscription, array $payload, array $options = []): PushOutcome
     {
         if ($this->throws) {
             throw $this->throws;
@@ -49,6 +49,7 @@ class FakeWebPushService extends WebPushService
             'user_id' => $subscription->user_id,
             'endpoint' => $subscription->endpoint,
             'payload' => $payload,
+            'options' => $options,
         ];
 
         return $this->outcomes[$subscription->endpoint] ?? PushOutcome::Sent;

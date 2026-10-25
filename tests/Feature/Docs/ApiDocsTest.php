@@ -102,7 +102,7 @@ it('documents every WebSocket channel', function () {
 
 it('documents every error code the API can return', function () {
     $codes = [];
-    foreach (['RoomConflictException', 'EncryptionConflictException'] as $class) {
+    foreach (['RoomConflictException', 'EncryptionConflictException', 'CallConflictException'] as $class) {
         preg_match_all("/new self\('([a-z_]+)'/", file_get_contents(dirname(__DIR__, 3)."/app/Exceptions/{$class}.php"), $m);
         array_push($codes, ...$m[1]);
     }

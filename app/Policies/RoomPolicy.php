@@ -41,12 +41,20 @@ class RoomPolicy
     /** Admit or deny people waiting to join: the host and co-hosts. */
     public function manage(User $user, Room $room): Response
     {
+        if ($room->isCallRoom()) {
+            return self::notForCalls();
+        }
+
         return $room->isManagedBy($user) ? Response::allow() : Response::deny('Only the host or a co-host can do this.');
     }
 
     /** Lock, unlock, end, and appoint co-hosts: the host only. */
     public function host(User $user, Room $room): Response
     {
+        if ($room->isCallRoom()) {
+            return self::notForCalls();
+        }
+
         return $room->host_id === $user->getKey() ? Response::allow() : Response::deny('Only the host can do this.');
     }
 
@@ -95,5 +103,15 @@ class RoomPolicy
         }
 
         return Response::allow();
+    }
+
+    /**
+     * A call's room has no host controls (lock, end, admit, mute, remove, co-hosts, audit log):
+     * nobody is in charge of a one-to-one call, and ending it goes through the call endpoints so the
+     * call and its room cannot disagree.
+     */
+    private static function notForCalls(): Response
+    {
+        return Response::deny('This is a one-to-one call. Use the call endpoints instead.');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Actions\Rooms;
 
 use App\Enums\RoomStatus;
 use App\Exceptions\LiveKitException;
+use App\Models\Call;
 use App\Models\Room;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -64,7 +65,7 @@ class EndStaleRooms
     {
         $cutoff = Room::microseconds(now()->subHours(config('cleanup.stale_rooms.never_started_hours')));
 
-        return Room::query()
+        return $this->rooms()
             ->where('status', RoomStatus::Waiting->value)
             ->whereRaw('coalesce(rooms.scheduled_at, rooms.created_at) + make_interval(mins => coalesce(rooms.duration_minutes, 0)) < ?', [$cutoff]);
     }
@@ -79,7 +80,7 @@ class EndStaleRooms
     {
         $cutoff = Room::microseconds(now()->subMinutes(config('cleanup.stale_rooms.empty_active_minutes')));
 
-        return Room::query()
+        return $this->rooms()
             ->where('status', RoomStatus::Active->value)
             ->whereRaw('not exists (select 1 from room_participants p where p.room_id = rooms.id and p.joined_at is not null and p.left_at is null)')
             ->whereRaw('coalesce((select max(p.left_at) from room_participants p where p.room_id = rooms.id), rooms.started_at) < ?', [$cutoff]);
@@ -92,8 +93,19 @@ class EndStaleRooms
      */
     private function startedTooLongAgo(): Builder
     {
-        return Room::query()
+        return $this->rooms()
             ->where('status', RoomStatus::Active->value)
             ->where('started_at', '<', Room::microseconds(now()->subHours(config('cleanup.stale_rooms.max_active_hours'))));
+    }
+
+    /**
+     * Rooms this cleanup looks at. The room of a call that is still ringing or going on is left to
+     * EndStaleCalls, which ends the call and its room together.
+     *
+     * @return Builder<Room>
+     */
+    private function rooms(): Builder
+    {
+        return Room::query()->whereNotIn('rooms.id', Call::active()->select('calls.room_id'));
     }
 }

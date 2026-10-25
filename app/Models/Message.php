@@ -77,13 +77,21 @@ class Message extends Model
     }
 
     /**
-     * Messages that can count as unread for a user: not their own, and not system notices.
+     * Messages that can count as unread for a user: not their own, and not system notices, except
+     * a missed call, which counts for the person who missed it (not for the one who called).
      * (sender_id is null for system messages, so a plain "<>" comparison would drop them silently.)
      */
     public function scopeIncomingFor(Builder $query, string $userId): void
     {
-        $query->where('messages.type', '!=', MessageType::System->value)
-            ->whereRaw('messages.sender_id is distinct from ?', [$userId]);
+        $query->where(fn (Builder $q) => $q
+            ->where(fn (Builder $message) => $message
+                ->where('messages.type', '!=', MessageType::System->value)
+                ->whereRaw('messages.sender_id is distinct from ?', [$userId]))
+            ->orWhere(fn (Builder $missedCall) => $missedCall
+                ->where('messages.type', MessageType::System->value)
+                ->whereRaw("messages.metadata->>'event' = 'call'")
+                ->whereRaw("messages.metadata->>'status' = 'missed'")
+                ->whereRaw("messages.metadata->>'caller_id' is distinct from ?", [$userId])));
     }
 
     /** Can the sender still edit this message? */

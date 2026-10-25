@@ -38,14 +38,15 @@ class WebPushService
     /**
      * @param  array<string, mixed>  $payload  JSON-encoded, encrypted for the browser, and padded to a
      *                                         fixed size by the library so its length does not give the message away
+     * @param  array{ttl?: int, urgency?: string}  $options  replace the configured TTL and urgency for this one push
      *
      * @throws \ErrorException when the VAPID keys are malformed (a configuration problem to fix, not retry)
      */
-    public function send(PushSubscription $subscription, array $payload): PushOutcome
+    public function send(PushSubscription $subscription, array $payload, array $options = []): PushOutcome
     {
         $webPush = new WebPush(
             ['VAPID' => ['subject' => $this->vapid['subject'], 'publicKey' => $this->vapid['public_key'], 'privateKey' => $this->vapid['private_key']]],
-            ['TTL' => $this->ttl, 'urgency' => $this->urgency],
+            ['TTL' => $options['ttl'] ?? $this->ttl, 'urgency' => $options['urgency'] ?? $this->urgency],
             $this->client ?? $this->defaultClient(),
         );
 

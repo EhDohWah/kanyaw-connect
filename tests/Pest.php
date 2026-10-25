@@ -1,6 +1,11 @@
 <?php
 
 use App\Enums\ChatRole;
+use App\Events\CallAccepted;
+use App\Events\CallDeclined;
+use App\Events\CallEnded;
+use App\Events\CallIncoming;
+use App\Events\CallMissed;
 use App\Events\ChatMemberAdded;
 use App\Events\ChatMemberRemoved;
 use App\Events\ChatUpdated;
@@ -15,6 +20,7 @@ use App\Events\RoomJoinRequested;
 use App\Events\RoomParticipantJoined;
 use App\Events\RoomParticipantLeft;
 use App\Events\RoomRoleChanged;
+use App\Models\Call;
 use App\Models\Chat;
 use App\Models\ChatMember;
 use App\Models\Device;
@@ -138,6 +144,7 @@ function fakeBroadcasts(): void
         ChatUpdated::class, ChatMemberAdded::class, ChatMemberRemoved::class,
         RoomParticipantJoined::class, RoomParticipantLeft::class, RoomJoinRequested::class,
         RoomAdmitted::class, RoomDenied::class, RoomEnded::class, RoomRoleChanged::class,
+        CallIncoming::class, CallAccepted::class, CallDeclined::class, CallMissed::class, CallEnded::class,
     ]);
 }
 
@@ -301,4 +308,16 @@ function fakeWebPush(): FakeWebPushService
     app()->instance(WebPushService::class, $fake);
 
     return $fake;
+}
+
+/**
+ * A call from $caller to $callee in their direct chat (made if there is none yet), with its two-seat
+ * room, as StartCall makes it. Ringing unless the attributes say otherwise, e.g.
+ * ['status' => 'ongoing', 'answered_at' => now()->subMinute()].
+ */
+function makeCall(User $caller, User $callee, array $attributes = []): Call
+{
+    $chat = Chat::where('direct_key', Chat::directKeyFor($caller->id, $callee->id))->first() ?? makeDirect($caller, $callee);
+
+    return Call::factory()->create(array_merge(['chat_id' => $chat->id, 'caller_id' => $caller->id, 'callee_id' => $callee->id], $attributes));
 }

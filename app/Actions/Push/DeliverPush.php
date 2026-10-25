@@ -15,10 +15,11 @@ class DeliverPush
      * on the spot, so it is not tried again for every later message.
      *
      * @param  array<string, mixed>  $payload
+     * @param  array{ttl?: int, urgency?: string}  $options  see WebPushService::send
      */
-    public function handle(PushSubscription $subscription, array $payload): PushOutcome
+    public function handle(PushSubscription $subscription, array $payload, array $options = []): PushOutcome
     {
-        $outcome = $this->push->send($subscription, $payload);
+        $outcome = $this->push->send($subscription, $payload, $options);
 
         if ($outcome === PushOutcome::Expired) {
             $subscription->delete();

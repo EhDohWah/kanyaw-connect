@@ -1,10 +1,12 @@
 <?php
 
+use App\Exceptions\CallConflictException;
 use App\Exceptions\EncryptionConflictException;
 use App\Exceptions\LiveKitException;
 use App\Exceptions\RoomConflictException;
 use App\Http\Middleware\KeepEnvelopesUntouched;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Resources\CallResource;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -36,6 +38,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (LiveKitException $e) => response()->json(['message' => $e->getMessage()], 503));
         $exceptions->render(fn (EncryptionConflictException $e) => response()->json(['message' => $e->getMessage(), 'code' => $e->errorCode] + $e->extra, $e->status));
         $exceptions->render(fn (RoomConflictException $e) => response()->json(['message' => $e->getMessage(), 'code' => $e->errorCode], $e->status));
+        $exceptions->render(fn (CallConflictException $e, Request $request) => response()->json(
+            ['message' => $e->getMessage(), 'code' => $e->errorCode] + ($e->call ? ['call' => CallResource::for($e->call)->resolve($request)] : []),
+            $e->status,
+        ));
 
         // Laravel's message for an unknown id names the model class ("No query results for model
         // [App\Models\Message] ..."). Clients do not need to know how the server is built.

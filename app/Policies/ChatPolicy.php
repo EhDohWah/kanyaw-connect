@@ -15,6 +15,22 @@ class ChatPolicy
         return $chat->membershipOf($user) !== null;
     }
 
+    /** Start a one-to-one call: a member of a direct chat whose other person still has an account. */
+    public function call(User $user, Chat $chat): Response
+    {
+        if (! $chat->isDirect()) {
+            return Response::deny('Calls are only possible in direct chats. Start a video room for a group.');
+        }
+
+        if (! $chat->membershipOf($user)) {
+            return Response::deny();
+        }
+
+        return $chat->members()->where('users.id', '!=', $user->getKey())->exists()
+            ? Response::allow()
+            : Response::deny('The other person is no longer here.');
+    }
+
     /** Rename / change the description of a group. */
     public function update(User $user, Chat $chat): Response
     {

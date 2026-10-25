@@ -66,6 +66,21 @@ describe('what is sent', function () {
             ->and($request->getHeaderLine('Authorization'))->toStartWith('vapid t=')->toContain(', k=');
     });
 
+    it('takes a time to live and an urgency for one push, for calls that must not arrive late', function () {
+        $history = [];
+        $service = realPushService([new Response(201), new Response(201)], $history);
+        [$subscription] = browser();
+
+        $service->send($subscription, ['body' => 'Calling'], ['ttl' => 37, 'urgency' => 'normal']);
+        $service->send($subscription, ['body' => 'Hi']);
+
+        expect($history[0]['request']->getHeaderLine('TTL'))->toBe('37')
+            ->and($history[0]['request']->getHeaderLine('Urgency'))->toBe('normal')
+            // the next push is back to the configured defaults
+            ->and($history[1]['request']->getHeaderLine('TTL'))->toBe('3600')
+            ->and($history[1]['request']->getHeaderLine('Urgency'))->toBe('high');
+    });
+
     it('signs the request as this server (VAPID) for exactly the push service it is calling', function () {
         $history = [];
         $keys = VAPID::createVapidKeys();

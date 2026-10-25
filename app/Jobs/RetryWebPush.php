@@ -23,8 +23,9 @@ class RetryWebPush implements ShouldQueue
 
     /**
      * @param  array<string, mixed>  $payload
+     * @param  array{ttl?: int, urgency?: string}  $options
      */
-    public function __construct(public string $subscriptionId, public array $payload) {}
+    public function __construct(public string $subscriptionId, public array $payload, public array $options = []) {}
 
     /**
      * @return list<int>
@@ -42,7 +43,7 @@ class RetryWebPush implements ShouldQueue
             return; // signed out or unsubscribed in the meantime
         }
 
-        if ($deliver->handle($subscription, $this->payload) === PushOutcome::Failed) {
+        if ($deliver->handle($subscription, $this->payload, $this->options) === PushOutcome::Failed) {
             throw new RuntimeException('The push service did not accept the notification.');
         }
     }

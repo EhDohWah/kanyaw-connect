@@ -13,7 +13,8 @@ Every example below was recorded from the running application, not written by ha
 5. [Guide: end-to-end encryption](#5-guide-end-to-end-encryption)
 6. [Guide: push notifications](#6-guide-push-notifications)
 7. [Guide: video rooms](#7-guide-video-rooms)
-8. [Limits and enums](#8-limits-and-enums)
+8. [Guide: calls](#8-guide-calls)
+9. [Limits and enums](#9-limits-and-enums)
 
 ---
 
@@ -75,7 +76,7 @@ Every error is JSON with a human-readable `message`:
 | `400`/`405` | Malformed request / wrong HTTP method |
 | `401` | Not signed in, or the token expired or was revoked |
 | `403` | Signed in but not allowed (not a member, not the host, …) |
-| `404` | Does not exist, **or you may not know that it exists** (other people's devices and push subscriptions, messages of chats you are not in, key bundles of people you share no chat with) |
+| `404` | Does not exist, **or you may not know that it exists** (other people's devices, push subscriptions and calls, messages of chats you are not in, key bundles of people you share no chat with) |
 | `409` | Valid request, but not possible right now. Has a `code`. |
 | `413` | Upload larger than the web server accepts (the API's own limit is 25 MB, answered with `422`) |
 | `422` | Validation failed. Has `errors`. |
@@ -93,6 +94,10 @@ Every error is JSON with a human-readable `message`:
 | `participant_not_connected` | 409 | mute | The person is not in the call right now |
 | `envelope_mismatch` | 409 | send (encrypted) | The envelopes do not match the members' devices. Also has `missing_device_ids` and `unexpected_device_ids`. |
 | `no_recipient_devices` | 409 | send (encrypted) | Nobody else in the chat has set up encryption yet |
+| `already_in_call` | 409 | start a call | You have a call ringing or going on |
+| `callee_busy` | 409 | start a call | The other person has a call ringing or going on |
+| `call_not_ringing` | 409 | accept, decline, cancel | The call was answered, declined, cancelled or rang out. Also has `call`. |
+| `call_not_ongoing` | 409 | end | The call is still ringing, or was never answered. Also has `call`. |
 
 ### 1.6 Pagination
 
@@ -123,6 +128,8 @@ Limits are per signed-in user unless stated. A request over the limit gets `429`
 | `POST /auth/login` | 5 / minute per email + IP address |
 | `POST /auth/register` | 20 / hour per IP address |
 | `POST /chats/{chat}/messages` | 30 / minute |
+| `POST /chats/{chat}/calls` | 10 / minute |
+| `POST /calls/{call}/decline` | 30 / minute per IP address (it also works without a token) |
 | `POST /me/heartbeat` | 12 / minute |
 | `POST /rooms/{room}/join` | 20 / minute per room |
 | `POST /devices` | 20 / hour |
@@ -247,7 +254,7 @@ Returned by the chat endpoints. `GET /chats` rows have everything except `member
 | `is_encrypted` | Fixed when the chat is created. See [section 5](#5-guide-end-to-end-encryption). |
 | `member_count` | Current number of members |
 | `last_message_at` | Time of the latest message; chats are sorted by it |
-| `unread_count` | Messages from others after your read position (system messages and your own do not count) |
+| `unread_count` | Messages from others after your read position (your own and system messages do not count, except a call you missed) |
 | `my_membership` | Your own role and settings in this chat (below) |
 | `latest_message` | A [Message](#message) or `null`. In an encrypted chat it has `content: null`, and `envelope` only if you sent `X-Device-Id`. |
 | `other_user` | Direct chats only: the person you are talking to |
@@ -290,7 +297,7 @@ Returned by the chat endpoints. `GET /chats` rows have everything except `member
 
 | Field | Notes |
 |---|---|
-| `type` | `text`, `image`, `file`, `voice` or `system`. Only the first four can be sent. `system` messages are written by the server (for example "X started a video room"; `metadata.event` is `room_created` and `metadata.room_id` / `metadata.host_id` say which). Render system messages from `metadata`; `content` is an English fallback. |
+| `type` | `text`, `image`, `file`, `voice` or `system`. Only the first four can be sent. `system` messages are written by the server: "X started a video room" (`metadata.event` is `room_created`, and `metadata.room_id` / `metadata.host_id` say which), or the outcome of a call (`metadata.event` is `call`, see [section 8](#8-guide-calls)). Render system messages from `metadata`; `content` is an English fallback. |
 | `sender`, `sender_id` | `null` for system messages |
 | `content` | Text or caption. **Always `null` in an encrypted chat.** |
 | `reply_to` | A small preview of the message replied to: `{ id, sender_id, type, content, is_deleted }`. `content` is cut to 140 characters and is `null` when the original was deleted. |
@@ -487,6 +494,48 @@ What you need to start an encrypted session with one device of another person.
   "created_at": "2026-03-14T09:10:21.827683Z"
 }
 ```
+
+### Call
+
+A one-to-one call in a direct chat. Its media runs in an ordinary two-seat [Room](#room) (`room_id`); this object holds the ringing state. See [section 8](#8-guide-calls).
+
+```json
+{
+  "id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+  "room_id": "0195e2c4-0031-7a30-8130-5f3a9c05ccd0",
+  "kind": "video",
+  "status": "ended",
+  "end_reason": "hung_up",
+  "caller": {
+    "id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
+    "name": "Saw Eh Doh",
+    "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg",
+    "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp"
+  },
+  "callee": {
+    "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde",
+    "name": "Naw Paw Say",
+    "avatar_url": null,
+    "avatar_thumb_url": null
+  },
+  "created_at": "2026-03-14T09:15:00.123456Z",
+  "ring_expires_at": "2026-03-14T09:15:45.123456Z",
+  "answered_at": "2026-03-14T09:15:06.123456Z",
+  "ended_at": "2026-03-14T09:18:18.123456Z",
+  "duration_seconds": 192
+}
+```
+
+| Field | Notes |
+|---|---|
+| `kind` | `voice` or `video`. A voice call's LiveKit token can publish the microphone only. |
+| `status` | `ringing` → `ongoing` (answered) → `ended`; or `ringing` → `declined` / `missed`. `ringing` and `ongoing` are "active": a person is in at most one active call. |
+| `end_reason` | `null` while active and for `declined`. `hung_up` (someone pressed end), `connection_lost` (a connection dropped and did not come back, or LiveKit closed the room), `cancelled` (the caller gave up while it rang; status `missed`), `no_answer` (it rang out; status `missed`). |
+| `caller`, `callee` | [PublicUser](#publicuser). `null` only once that account has been deleted. |
+| `ring_expires_at` | When the ringing stops by itself (45 seconds after `created_at`, `CALL_RING_SECONDS`) |
+| `answered_at`, `ended_at` | `null` until it happens. `ended_at` is also set for `declined` and `missed`. |
+| `duration_seconds` | Whole seconds from `answered_at` to `ended_at`; `null` until a call that was answered has ended |
 
 ## 3. Endpoints
 
@@ -1129,6 +1178,8 @@ Rooms that have not ended and that you host, were invited to through a chat, or 
 
 `?filter=` is optional: `hosting` (you host), `invited` (someone else hosts) or `upcoming` (scheduled rooms still to come, soonest first).
 
+The rooms behind one-to-one [calls](#39-calls) are never listed.
+
 **Response `200`:** a list of [Room](#room) (without `waiting_participants`).
 
 ### GET /rooms/{room}
@@ -1147,7 +1198,7 @@ Ask to join. **Limit:** 20 per minute per person and room (it guards the passwor
 
 There are two successful outcomes:
 
-- **Admitted** (`200`). Connect to LiveKit with `livekit_url` and `token`. The token lasts one hour (`LIVEKIT_TOKEN_TTL`). Its identity is your user id and its metadata is `{ "role", "avatar_url" }`; the host and co-hosts get LiveKit admin rights. A seat is reserved for you for 120 seconds while you connect, so two people asking for the last seat cannot both get in. Reconnecting always works for someone who already holds a seat.
+- **Admitted** (`200`). Connect to LiveKit with `livekit_url` and `token`. The token lasts one hour (`LIVEKIT_TOKEN_TTL`). Its identity is your user id and its metadata is `{ "role", "avatar_url" }`; the host and co-hosts get LiveKit admin rights (never in a call). A seat is reserved for you for 120 seconds while you connect, so two people asking for the last seat cannot both get in. Reconnecting always works for someone who already holds a seat.
 
 ```json
 {
@@ -1187,6 +1238,8 @@ There are two successful outcomes:
   }
 }
 ```
+
+**The room of a one-to-one [call](#39-calls)** follows the call: the caller may join while it rings, both may join once it is answered, and otherwise the answer is `409 room_ended` (the callee who has not answered yet gets the message "Answer the call before joining it."). Neither person gets LiveKit admin rights, and a voice call's token may publish the microphone only (`canPublishSources: ["microphone"]`).
 
 - **Waiting** (`200`). The room has a waiting room, so the host has to let you in. There is no token yet. You hear [`room.admitted`](#roomadmitted) or [`room.denied`](#roomdenied) on your `private-user` channel; after `room.admitted`, call join again (no password needed).
 
@@ -1228,7 +1281,7 @@ There are two successful outcomes:
 
 ### 3.8 Room controls
 
-Calls below are for the room's host and co-hosts (marked per route). Everyone else gets `403`.
+Calls below are for the room's host and co-hosts (marked per route). Everyone else gets `403`. The room of a one-to-one [call](#39-calls) has none of these controls: they answer `403` ("This is a one-to-one call. Use the call endpoints instead.").
 
 ### POST /rooms/{room}/admit/{user}
 
@@ -1366,7 +1419,184 @@ An entry is written only when something changed (admitting someone already admit
 }
 ```
 
-### 3.9 Encryption: devices and keys
+### 3.9 Calls
+
+One-to-one voice and video calls in a direct chat. A call is a [Call](#call) record (the ringing) plus a two-seat room that carries the media, so joining, LiveKit tokens and the webhook work as for meetings. See [section 8](#8-guide-calls) for the whole flow.
+
+Only the two people in a call can see it; everyone else gets `404`, exactly as for an id that does not exist. Accept, decline, cancel and end are safe to repeat: doing again what already happened returns `200` with the call.
+
+### POST /chats/{chat}/calls
+
+Ring the other person of a direct chat. **Limit:** 10 per minute.
+
+| Field | Type | Rules |
+|---|---|---|
+| `kind` | string | Required. `voice` or `video`. |
+
+Creates the call (`ringing` until `ring_expires_at`, 45 seconds) and its room: instant, linked to the chat, two seats, no password, no waiting room, you as host and the other person already let in. No "started a video room" message is posted and the room is not listed in `GET /rooms`. The callee hears [`call.incoming`](#callincoming) and gets an [incoming-call push](#82-push-notifications-for-calls).
+
+Works in end-to-end encrypted direct chats too (the media is encrypted in transit by WebRTC either way; the server only sees who called whom and when).
+
+**Response `201`:**
+
+```json
+{
+  "data": {
+    "id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "room_id": "0195e2c4-0031-7a30-8130-5f3a9c05ccd0",
+    "kind": "video",
+    "status": "ringing",
+    "end_reason": null,
+    "caller": {
+      "id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
+      "name": "Saw Eh Doh",
+      "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg",
+      "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp"
+    },
+    "callee": {
+      "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde",
+      "name": "Naw Paw Say",
+      "avatar_url": null,
+      "avatar_thumb_url": null
+    },
+    "created_at": "2026-03-14T09:15:00.123456Z",
+    "ring_expires_at": "2026-03-14T09:15:45.123456Z",
+    "answered_at": null,
+    "ended_at": null,
+    "duration_seconds": null
+  }
+}
+```
+
+**Errors**
+
+| Status | `code` | Meaning |
+|---|---|---|
+| `422` | | `errors.kind`: missing, or not `voice` / `video` |
+| `403` | | Not a member of the chat; a group chat ("Calls are only possible in direct chats. Start a video room for a group."); or the other person has deleted their account |
+| `409` | `already_in_call` | You have a call ringing or going on (including one someone is making to you) |
+| `409` | `callee_busy` | The other person has a call ringing or going on |
+| `429` | | More than 10 starts a minute |
+
+```json
+{
+  "message": "They are in another call.",
+  "code": "callee_busy"
+}
+```
+
+### GET /calls/current
+
+Your call that is `ringing` or `ongoing`, whether you are the caller or the callee, or `null`. Ask it when the app starts and after every WebSocket reconnect: a `ringing` call with you as callee should show the incoming-call screen, an `ongoing` one should reconnect. A call that has rung out is never returned as ringing.
+
+**Response `200`:** `{ "data": Call }`, or:
+
+```json
+{
+  "data": null
+}
+```
+
+### GET /calls/{call}
+
+One call. **Response `200`:** `{ "data": Call }`. `404` for anyone but the caller and the callee.
+
+### POST /calls/{call}/accept
+
+The callee answers: `ringing` → `ongoing`, `answered_at` is set, and both people hear [`call.accepted`](#callaccepted) (so the callee's other devices stop ringing). Then join the room: `POST /rooms/{room_id}/join`. Accepting a call that is already `ongoing` returns it.
+
+**Response `200`:** `{ "data": Call }` with `status: "ongoing"`.
+
+**Errors**
+
+| Status | `code` | Meaning |
+|---|---|---|
+| `403` | | You are the caller |
+| `404` | | Not your call |
+| `409` | `call_not_ringing` | Too late: it was declined, cancelled, rang out, or ended. The body has the call as it is now. |
+
+Accepting a call that has already ended:
+
+```json
+{
+  "message": "This call is no longer ringing.",
+  "code": "call_not_ringing",
+  "call": {
+    "id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "room_id": "0195e2c4-0031-7a30-8130-5f3a9c05ccd0",
+    "kind": "video",
+    "status": "ended",
+    "end_reason": "hung_up",
+    "caller": { "id": "0195e2c4-0001-7a00-8100-5f3a9c000000", "name": "Saw Eh Doh", "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg", "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp" },
+    "callee": { "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde", "name": "Naw Paw Say", "avatar_url": null, "avatar_thumb_url": null },
+    "created_at": "2026-03-14T09:15:00.123456Z",
+    "ring_expires_at": "2026-03-14T09:15:45.123456Z",
+    "answered_at": "2026-03-14T09:15:06.123456Z",
+    "ended_at": "2026-03-14T09:18:18.123456Z",
+    "duration_seconds": 192
+  }
+}
+```
+
+### POST /calls/{call}/decline
+
+The callee says no: `ringing` → `declined`, the room is closed, and both people hear [`call.declined`](#calldeclined). Declining again returns the declined call.
+
+Two ways to call it:
+
+- **From the app**, with the bearer token like every other request. The caller gets `403`, others `404`, no token `401`.
+- **From the service worker**, which has no token: `POST` the `decline_url` from the [incoming-call push](#82-push-notifications-for-calls) as it is. It is a signed URL (like attachment URLs) that stands for the callee and stops working at `ring_expires_at`. A changed or expired link gets `403`. **Limit:** 30 per minute per IP address.
+
+**Response `200`:** `{ "data": Call }` with `status: "declined"`.
+
+**Errors:** `409` `call_not_ringing` (with the call) once it was answered, cancelled or rang out.
+
+### POST /calls/{call}/cancel
+
+The caller gives up before it is answered: `ringing` → `missed` with `end_reason: "cancelled"`, the room is closed, and both people hear [`call.missed`](#callmissed). Cancelling a call that is already `missed` (cancelled, or rang out) returns it.
+
+**Response `200`:** `{ "data": Call }`.
+
+**Errors:** `403` for the callee (who declines instead); `404` for others; `409` `call_not_ringing` (with the call) once it was answered or declined.
+
+### POST /calls/{call}/end
+
+Either person hangs up an answered call: `ongoing` → `ended` with `end_reason: "hung_up"`, the room is closed, and both people hear [`call.ended`](#callended). Ending a call that has already ended (by the other person, or a lost connection) returns it.
+
+**Response `200`:** `{ "data": Call }` with `duration_seconds`.
+
+**Errors**
+
+| Status | `code` | Meaning |
+|---|---|---|
+| `404` | | Not your call |
+| `409` | `call_not_ongoing` | It is still ringing (use cancel or decline), or it was never answered. The body has the call. |
+
+```json
+{
+  "message": "This call is not in progress.",
+  "code": "call_not_ongoing",
+  "call": {
+    "id": "0195e2c4-0033-7a32-8132-5f3a9c060aae",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "room_id": "0195e2c4-0034-7a33-8133-5f3a9c06299d",
+    "kind": "voice",
+    "status": "ringing",
+    "end_reason": null,
+    "caller": { "id": "0195e2c4-0001-7a00-8100-5f3a9c000000", "name": "Saw Eh Doh", "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg", "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp" },
+    "callee": { "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde", "name": "Naw Paw Say", "avatar_url": null, "avatar_thumb_url": null },
+    "created_at": "2026-03-14T09:20:18.123456Z",
+    "ring_expires_at": "2026-03-14T09:21:03.123456Z",
+    "answered_at": null,
+    "ended_at": null,
+    "duration_seconds": null
+  }
+}
+```
+
+### 3.10 Encryption: devices and keys
 
 How these fit together is explained in [section 5](#5-guide-end-to-end-encryption). The server stores **public** keys only.
 
@@ -1585,7 +1815,7 @@ Get what you need to start an encrypted session with **each active device** of a
 
 `one_time_prekey` is `null` when that device has run out; start the session with the signed prekey alone. Bundles never contain a device name.
 
-### 3.10 Push notifications
+### 3.11 Push notifications
 
 Explained in [section 6](#6-guide-push-notifications).
 
@@ -1666,7 +1896,7 @@ Your subscriptions (one per browser), oldest first. **Response `200`:** `{ "data
 
 Stop notifications for one browser (call it when the user turns notifications off, after `subscription.unsubscribe()`). **Response `204`.** Someone else's subscription answers `404`.
 
-### 3.11 Real-time channel authorization
+### 3.12 Real-time channel authorization
 
 ### POST /broadcasting/auth
 
@@ -1694,13 +1924,15 @@ For `presence-*` channels the answer also carries `channel_data` (the member inf
 
 A channel you may not join answers `403`.
 
-### 3.12 Webhooks
+### 3.13 Webhooks
 
 ### POST /webhooks/livekit
 
 Called **by the LiveKit server, not by the app.** It is how the API learns who is really connected: `joined_at`, `left_at`, room activity and host transfers come only from here. The request is signed by LiveKit (a JWT in the `Authorization` header that covers the body); a missing or wrong signature gets `401`. Handles `participant_joined`, `participant_left` and `room_finished`; other events are accepted and ignored. Safe against duplicate and out-of-order delivery.
 
 A person who connects with a token the host has since revoked is disconnected again at once.
+
+For the room of a one-to-one call, `room_finished` ends an answered call (`connection_lost`), and `participant_left` during an answered call starts the reconnect grace (see [section 8](#8-guide-calls)) instead of a host transfer.
 
 ```json
 {
@@ -1749,7 +1981,7 @@ Echo strips the `private-` / `presence-` prefix: `Echo.private('chat.X')` is the
 
 | Channel | Who may join | Used for |
 |---|---|---|
-| `private-user.{userId}` | that user only | An always-on channel: subscribe once at login. New messages and new chats in chats you have **not** opened, being added to or removed from a chat, read state from your other devices, device changes, and the room invitations meant for you. |
+| `private-user.{userId}` | that user only | An always-on channel: subscribe once at login. New messages and new chats in chats you have **not** opened, being added to or removed from a chat, read state from your other devices, device changes, the room invitations meant for you, and calls (`call.*`). |
 | `private-chat.{chatId}` | members of the chat | Everything that happens in a chat you have open. |
 | `presence-chat.{chatId}` | members of the chat | Who is in the chat right now, and typing indicators. Member info is `{ id, name, avatar_url }`. |
 | `presence-room.{roomId}` | the host and **admitted** participants | Who is in a video room and room-wide events. People still waiting to be let in are not on it; what concerns them arrives on their `private-user` channel. |
@@ -2051,6 +2283,80 @@ Channels: `presence-room.0195e2c4-001a-7a19-8119-5f3a9c030557`
 }
 ```
 
+### `call.incoming`
+
+Someone is calling you. Show the incoming-call screen on every device; ring until `call.ring_expires_at`, or until `call.accepted`, `call.declined` or `call.missed` arrives for the same call. Only the callee hears it.
+
+Channels: `private-user.0195e2c4-0003-7a02-8102-5f3a9c003dde`
+
+```json
+{
+  "call": {
+    "id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "room_id": "0195e2c4-0031-7a30-8130-5f3a9c05ccd0",
+    "kind": "video",
+    "status": "ringing",
+    "end_reason": null,
+    "caller": {
+      "id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
+      "name": "Saw Eh Doh",
+      "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg",
+      "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp"
+    },
+    "callee": {
+      "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde",
+      "name": "Naw Paw Say",
+      "avatar_url": null,
+      "avatar_thumb_url": null
+    },
+    "created_at": "2026-03-14T09:15:00.123456Z",
+    "ring_expires_at": "2026-03-14T09:15:45.123456Z",
+    "answered_at": null,
+    "ended_at": null,
+    "duration_seconds": null
+  }
+}
+```
+
+### `call.accepted`
+
+The callee answered (on one of their devices). The caller's call is now live; the callee's other devices stop ringing. Payload `{ call }` with `status: "ongoing"` and `answered_at`.
+
+Channels: `private-user.0195e2c4-0001-7a00-8100-5f3a9c000000`, `private-user.0195e2c4-0003-7a02-8102-5f3a9c003dde`
+
+### `call.declined`
+
+The callee said no. Payload `{ call }` with `status: "declined"`. Channels: the `private-user` channels of both people.
+
+### `call.missed`
+
+Nobody answered: the caller cancelled (`end_reason: "cancelled"`) or it rang out (`no_answer`). Stop ringing. Channels: the `private-user` channels of both people.
+
+```json
+{
+  "call": {
+    "id": "0195e2c4-0033-7a32-8132-5f3a9c060aae",
+    "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+    "room_id": "0195e2c4-0034-7a33-8133-5f3a9c06299d",
+    "kind": "voice",
+    "status": "missed",
+    "end_reason": "cancelled",
+    "caller": { "id": "0195e2c4-0001-7a00-8100-5f3a9c000000", "name": "Saw Eh Doh", "avatar_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef.jpg", "avatar_thumb_url": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp" },
+    "callee": { "id": "0195e2c4-0003-7a02-8102-5f3a9c003dde", "name": "Naw Paw Say", "avatar_url": null, "avatar_thumb_url": null },
+    "created_at": "2026-03-14T09:20:18.123456Z",
+    "ring_expires_at": "2026-03-14T09:21:03.123456Z",
+    "answered_at": null,
+    "ended_at": "2026-03-14T09:20:26.123456Z",
+    "duration_seconds": null
+  }
+}
+```
+
+### `call.ended`
+
+An answered call is over: someone hung up (`hung_up`) or a connection was lost (`connection_lost`). Leave the LiveKit room. Payload `{ call }` with `status: "ended"` and `duration_seconds`. Channels: the `private-user` channels of both people.
+
 ## 5. Guide: end-to-end encryption
 
 In an encrypted chat the server is only a **key directory** and a **ciphertext relay**. All encryption and decryption happens in the clients. The server stores public keys and opaque encrypted blobs, and it never receives a private key or any plaintext. (A test scans the source to make sure no code decrypts or reads ciphertext.)
@@ -2227,6 +2533,8 @@ The service worker receives JSON (`event.data.json()`):
 
 If the server is set to hide previews (`PUSH_SHOW_PREVIEW=false`), `body` is "New message" for every chat.
 
+Calls send two more kinds, `call.incoming` and `call.missed`: see [section 8.2](#82-push-notifications-for-calls). Branch on `type`.
+
 ```js
 self.addEventListener('push', (event) => {
   const data = event.data.json();
@@ -2275,9 +2583,114 @@ Calls over restrictive mobile networks need the server's TURN setup (see the REA
 
 ---
 
-## 8. Limits and enums
+## 8. Guide: calls
 
-### 8.1 Limits
+A call is a ringing [Call](#call) plus a two-seat room. The REST calls below move the call along; the media is LiveKit, exactly as in a meeting ([section 7](#7-guide-video-rooms)).
+
+### 8.1 The flow
+
+**Caller**
+
+1. `POST /chats/{chat}/calls { kind }` and show "Calling…".
+2. `POST /rooms/{call.room_id}/join` right away and connect to LiveKit while it rings, so camera and microphone are ready the moment it is answered. (The callee cannot join until they answer.)
+3. On [`call.accepted`](#callaccepted) the call is live. On [`call.declined`](#calldeclined) or [`call.missed`](#callmissed), disconnect and show why.
+4. Hanging up before it is answered is `POST /calls/{id}/cancel`; after, `POST /calls/{id}/end`.
+
+**Callee**
+
+1. [`call.incoming`](#callincoming) on `private-user.{me}`, or an [incoming-call push](#82-push-notifications-for-calls) while the app is closed.
+2. `POST /calls/{id}/accept`, then `POST /rooms/{call.room_id}/join` and connect. Or `POST /calls/{id}/decline`.
+3. A `409 call_not_ringing` answer means it is too late (answered on another device, cancelled, rang out): show the `call` from the body.
+
+**Both**
+
+- **Resync:** `GET /calls/current` when the app starts and after every WebSocket reconnect.
+- **Ending:** [`call.ended`](#callended) for both; leave the LiveKit room. [`room.ended`](#roomended) also arrives on the room's presence channel.
+- **Busy:** a person is in at most one call that is ringing or going on. Starting another gets `409 already_in_call` (you) or `409 callee_busy` (them).
+- **Voice calls:** the LiveKit token can publish the microphone only; turning on a camera or sharing a screen fails in LiveKit.
+- **In LiveKit, nobody is host:** neither person can mute or remove the other, and the room has no host controls in this API (lock, end, admit, mute, remove, co-hosts and the audit log answer `403`). Use the call endpoints.
+
+**What the server does by itself**
+
+- **Ringing runs out** at `ring_expires_at` (45 seconds, `CALL_RING_SECONDS`): the call becomes `missed` with `no_answer`.
+- **A dropped connection:** LiveKit reconnects by itself for short drops. If one person stays gone for 30 seconds (`CALL_RECONNECT_GRACE`), the call ends with `connection_lost`. Reconnecting within that time (join again if the page reloaded) keeps the call going.
+- **LiveKit closes the room** (both left): an answered call ends with `connection_lost`.
+- A cleanup every 15 minutes catches anything the above missed (the queue worker was down, a webhook was lost).
+
+**In the chat**, every call that ends, is declined or missed leaves one `system` message, broadcast as [`message.sent`](#messagesent). Render it from `metadata`; `content` is an English fallback ("Missed voice call", "Video call declined", "Video call · 3:12"). A missed call counts toward the callee's `unread_count`; no other system message does.
+
+```json
+{
+  "id": "0195e2c4-0035-7a34-8134-5f3a9c06488c",
+  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+  "sender": null,
+  "sender_id": null,
+  "type": "system",
+  "content": "Missed voice call",
+  "reply_to_id": null,
+  "reply_to": null,
+  "client_id": null,
+  "is_edited": false,
+  "edited_at": null,
+  "metadata": {
+    "event": "call",
+    "call_id": "0195e2c4-0033-7a32-8132-5f3a9c060aae",
+    "kind": "voice",
+    "status": "missed",
+    "end_reason": "cancelled",
+    "caller_id": "0195e2c4-0001-7a00-8100-5f3a9c000000",
+    "duration_seconds": null
+  },
+  "encrypted": false,
+  "attachment": null,
+  "created_at": "2026-03-14T09:20:26.123456Z"
+}
+```
+
+### 8.2 Push notifications for calls
+
+**Incoming call.** Sent to **every** subscribed browser of the callee the moment the call starts, even while their app is open (it may be open on another device, or asleep in a background tab) and even if the chat is muted (muting silences messages, not calls). It is sent with `urgency: high` and a `TTL` of the seconds left until `ring_expires_at`, so the push service drops it rather than deliver a call that is over; it is not retried, and it is not sent at all if the call stopped ringing while it waited in the queue.
+
+```json
+{
+  "type": "call.incoming",
+  "call_id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+  "room_id": "0195e2c4-0031-7a30-8130-5f3a9c05ccd0",
+  "kind": "video",
+  "title": "Saw Eh Doh",
+  "body": "Incoming video call",
+  "icon": "https://api.example.org/storage/avatars/0195e2c4-0001-7a00-8100-5f3a9c000000/0195e2c4-0002-7a01-8101-5f3a9c001eef_256.webp",
+  "decline_url": "https://api.example.org/api/v1/calls/0195e2c4-0030-7a2f-812f-5f3a9c05ade1/decline?expires=1773479745&signature=3f9a1c7e5b2d8046a1e7c93b5d0f284a6e1b97c3d50a8f42e6b1c9d7a3e05f81",
+  "ring_expires_at": "2026-03-14T09:15:45.123456Z"
+}
+```
+
+| Field | Notes |
+|---|---|
+| `title`, `body` | The caller's name; "Incoming voice call" or "Incoming video call" (English; use `kind` to localise). The caller's name is shown in encrypted chats too: the server knows who is calling. |
+| `icon` | The caller's `avatar_thumb_url`, or `null` |
+| `decline_url` | `POST` it from the service worker to decline without a token (a "Decline" notification action). It expires at `ring_expires_at`. |
+| `ring_expires_at` | Do not show the notification after this (close it if it is still up) |
+
+**Missed call.** Sent to the callee when a call ends `missed`, under the same rules as a new message ([section 6.3](#63-who-is-notified)): not if they muted the chat, not while their app is open. The summary message in the chat sends no separate "new message" push.
+
+```json
+{
+  "type": "call.missed",
+  "call_id": "0195e2c4-0033-7a32-8132-5f3a9c060aae",
+  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+  "kind": "voice",
+  "title": "Saw Eh Doh",
+  "body": "Missed voice call"
+}
+```
+
+---
+
+## 9. Limits and enums
+
+### 9.1 Limits
 
 | What | Limit |
 |---|---|
@@ -2294,6 +2707,9 @@ Calls over restrictive mobile networks need the server's TURN setup (see the REA
 | Login token | 30 days |
 | LiveKit token | 1 hour |
 | Room size | 2–100 participants (default 50) |
+| Call ringing | 45 seconds |
+| Reconnecting to an answered call | 30 seconds |
+| Starting calls | 10 a minute |
 | Encryption devices per user | 10 active |
 | Registering a device | 20–100 one-time prekeys |
 | Unclaimed prekeys per device | 200 |
@@ -2302,7 +2718,7 @@ Calls over restrictive mobile networks need the server's TURN setup (see the REA
 | Deleted messages are purged | 30 days after deletion |
 | Unsent uploads are purged | 24 hours after upload |
 
-### 8.2 Enums
+### 9.2 Enums
 
 | Name | Values |
 |---|---|
@@ -2314,4 +2730,7 @@ Calls over restrictive mobile networks need the server's TURN setup (see the REA
 | Room `status` | `waiting`, `active`, `ended` |
 | Room participant `role` | `host`, `co_host`, `participant` |
 | Room participant `admission` | `waiting`, `admitted`, `denied` |
+| Call `kind` | `voice`, `video` |
+| Call `status` | `ringing`, `ongoing`, `ended`, `declined`, `missed` |
+| Call `end_reason` | `hung_up`, `connection_lost`, `cancelled`, `no_answer` (or `null`) |
 | Audit `action` | `room.created`, `room.participant_admitted`, `room.participant_denied`, `room.participant_removed`, `room.participant_muted`, `room.co_host_appointed`, `room.locked`, `room.unlocked`, `room.ended`, `room.host_transferred`, `room.auto_ended` |
