@@ -52,6 +52,12 @@ export function createAppRouter(history: RouterHistory = createWebHistory(import
             component: () => import('@/views/RoomView.vue'),
             meta: { immersive: true, titleKey: 'placeholders.roomTitle' },
           },
+          {
+            path: 'calls/:id',
+            name: 'call',
+            component: () => import('@/views/CallView.vue'),
+            meta: { immersive: true, titleKey: 'placeholders.callTitle' },
+          },
           { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { titleKey: 'nav.profile' } },
           { path: 'settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { titleKey: 'nav.settings' } },
           {

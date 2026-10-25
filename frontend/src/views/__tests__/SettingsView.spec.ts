@@ -96,7 +96,7 @@ describe('SettingsView: account', () => {
     useFakePush()
     const { wrapper } = await open()
 
-    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Notifications', 'Meetings', 'Account'])
+    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Notifications', 'Calls', 'Meetings', 'Account'])
     for (const each of wrapper.findAll('section')) {
       expect(each.attributes('aria-labelledby')).toBe(each.get('h2').attributes('id'))
     }
@@ -263,7 +263,7 @@ describe('SettingsView: notifications', () => {
     const { wrapper } = await open()
 
     expect(section(wrapper, 'Notifications')).toBeUndefined()
-    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Meetings', 'Account'])
+    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['Calls', 'Meetings', 'Account'])
   })
 })
 
@@ -302,5 +302,47 @@ describe('SettingsView: data saver', () => {
     expect(switchIn(section(wrapper, 'Meetings')).attributes('aria-checked')).toBe('false')
     expect(switchIn(section(wrapper, 'Meetings')).attributes('disabled')).toBeUndefined()
     expect(section(wrapper, 'Meetings')!.get('[role=alert]').text()).toBe('Something went wrong on our side. Please try again in a moment.')
+  })
+})
+
+describe('SettingsView: calls', () => {
+  it('Ringtone and Vibration are on until switched off', async () => {
+    const { wrapper } = await open()
+    const switches = section(wrapper, 'Calls')!.findAll('[role=switch]')
+
+    expect(section(wrapper, 'Calls')!.text()).toContain('Ringtone')
+    expect(section(wrapper, 'Calls')!.text()).toContain('Vibration')
+    expect(switches.map((each) => each.attributes('aria-checked'))).toEqual(['true', 'true'])
+  })
+
+  it('saves each switch in settings with PATCH /me', async () => {
+    const { wrapper, calls } = await open()
+    const [ringtone, vibration] = section(wrapper, 'Calls')!.findAll('[role=switch]')
+
+    await ringtone!.trigger('click')
+    await settle()
+    await vibration!.trigger('click')
+    await settle()
+
+    const patches = calls.filter((call) => call.method === 'patch').map((call) => call.body)
+    expect(patches).toEqual([{ settings: { call_ringtone: false } }, { settings: { call_vibrate: false } }])
+    expect(useAuthStore().user?.settings).toMatchObject({ call_ringtone: false, call_vibrate: false })
+  })
+
+  it('shows what was saved before', async () => {
+    server.user = makeUser({ settings: { call_ringtone: false } })
+    const { wrapper } = await open()
+    expect(section(wrapper, 'Calls')!.findAll('[role=switch]').map((each) => each.attributes('aria-checked'))).toEqual(['false', 'true'])
+  })
+
+  it('puts the switch back and says so when saving fails', async () => {
+    server.fail['patch /me'] = { status: 500, data: { message: 'Server Error' } }
+    const { wrapper } = await open()
+
+    await section(wrapper, 'Calls')!.findAll('[role=switch]')[0]!.trigger('click')
+    await settle()
+
+    expect(section(wrapper, 'Calls')!.findAll('[role=switch]')[0]!.attributes('aria-checked')).toBe('true')
+    expect(section(wrapper, 'Calls')!.find('[role=alert]').exists()).toBe(true)
   })
 })

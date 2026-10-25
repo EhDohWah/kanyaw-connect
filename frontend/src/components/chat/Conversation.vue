@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Lock, MessageCircleOff } from 'lucide-vue-next'
-import { computed, ref, toRef } from 'vue'
+import { computed, nextTick, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Composer from '@/components/chat/Composer.vue'
@@ -39,6 +39,7 @@ const ui = useUiStore()
 const { chat, state, timeline, atBottom, reload } = useConversation(toRef(props, 'chatId'), { onGone: () => emit('gone') })
 
 const list = ref<InstanceType<typeof MessageList> | null>(null)
+const composer = ref<InstanceType<typeof Composer> | null>(null)
 const infoOpen = ref(false)
 /** The message whose picture is open full size. Looked up by id, so fresh links that arrive meanwhile are used. */
 const viewerId = ref<string | null>(null)
@@ -98,6 +99,18 @@ async function confirmDelete(): Promise<void> {
 }
 
 const viewerAttachment = computed(() => viewerMessage.value?.attachment ?? null)
+
+// "Send a voice message" after a call nobody answered: start recording as soon as this chat's composer is there.
+watch(
+  [() => ui.recordVoiceIn, composer],
+  async ([chatId, box]) => {
+    if (chatId !== props.chatId || !box) return
+    ui.recordVoiceIn = null
+    await nextTick()
+    box.startRecording()
+  },
+  { immediate: true },
+)
 
 /** An attachment link stopped working (they last an hour): ask the server for fresh ones. */
 function refreshLinks(messageId: string): void {
@@ -173,7 +186,7 @@ function refreshLinks(messageId: string): void {
         />
 
         <TypingIndicator :names="typingNames" />
-        <Composer :chat="chat" @sent="list?.scrollToBottom()" />
+        <Composer ref="composer" :chat="chat" @sent="list?.scrollToBottom()" />
       </template>
     </template>
 

@@ -1,7 +1,9 @@
 import type { Pinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useFakeAudio } from '@/__tests__/fakeAudio'
 import { lastEcho } from '@/__tests__/fakeEcho'
+import { useFakeMicrophone } from '@/__tests__/fakeRecorder'
 import { CHAT_ID, ME, PAW, fakeApi, makeChat, makeMember, makeMessage, mountApp, page, person, restoreApi, settle, signedInStores, type Call, type Reply } from '@/__tests__/helpers'
 import Conversation from '@/components/chat/Conversation.vue'
 import { realtime } from '@/realtime'
@@ -138,7 +140,7 @@ describe('opening a conversation', () => {
   it('listens to the chat’s channels while it is open, and lets go when it is closed', async () => {
     serve({ chat: makeChat(), messages: [theirs('x')] })
     const nothing = () => undefined
-    realtime.connect('t', ME, { messageSent: nothing, messageRead: nothing, chatUpdated: nothing, chatMemberAdded: nothing, chatMemberRemoved: nothing, roomAdmitted: nothing, roomDenied: nothing, roomJoinRequested: nothing }, { status: nothing, connected: nothing })
+    realtime.connect('t', ME, { messageSent: nothing, messageRead: nothing, chatUpdated: nothing, chatMemberAdded: nothing, chatMemberRemoved: nothing, roomAdmitted: nothing, roomDenied: nothing, roomJoinRequested: nothing, callIncoming: nothing, callChanged: nothing }, { status: nothing, connected: nothing })
     const { wrapper } = await open({ chat: makeChat(), messages: [theirs('x')] })
     const echo = lastEcho()
 
@@ -434,5 +436,35 @@ describe('the full-size picture', () => {
 
     expect(calls.filter((c) => c.url === '/messages/photo-1')).toHaveLength(1)
     expect(big()?.getAttribute('src')).toBe('https://x/file?sig=new')
+  })
+})
+
+describe('after a call nobody answered', () => {
+  it('"Send a voice message" opens the chat with the recorder already started', async () => {
+    const mic = useFakeMicrophone()
+    useFakeAudio()
+    serve({ chat: makeChat() })
+
+    const { wrapper } = await open({ chat: makeChat() }, (pinia) => {
+      useUiStore(pinia).recordVoiceIn = CHAT_ID
+    })
+    await settle(8)
+
+    expect(mic.getUserMedia).toHaveBeenCalledTimes(1)
+    expect(useUiStore().recordVoiceIn).toBeNull()
+    expect(wrapper.find('button[aria-label="Stop and listen"]').exists()).toBe(true)
+  })
+
+  it('another chat does not start recording', async () => {
+    const mic = useFakeMicrophone()
+    useFakeAudio()
+    serve({ chat: makeChat() })
+
+    await open({ chat: makeChat() }, (pinia) => {
+      useUiStore(pinia).recordVoiceIn = 'some-other-chat'
+    })
+
+    expect(mic.getUserMedia).not.toHaveBeenCalled()
+    expect(useUiStore().recordVoiceIn).toBe('some-other-chat')
   })
 })

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ArrowLeft, ChevronDown, Info, Maximize2 } from 'lucide-vue-next'
+import { ArrowLeft, ChevronDown, Info, Maximize2, Phone, Video } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { useDirectCallStore } from '@/stores/directCall'
 import { usePresenceStore } from '@/stores/presence'
 import type { Chat } from '@/types/chat'
 import { chatAvatar, chatTitle } from '@/utils/chatText'
@@ -13,6 +14,10 @@ defineEmits<{ back: []; info: []; openFull: []; collapse: [] }>()
 
 const { t } = useI18n()
 const presence = usePresenceStore()
+const directCall = useDirectCallStore()
+
+/** Calls are for direct chats; encrypted chats are still only a notice in this app, so they have none. */
+const canCall = computed(() => props.chat.type === 'direct' && !props.chat.is_encrypted && props.chat.other_user !== null)
 
 const title = computed(() => chatTitle(props.chat, t('chat.untitled')))
 const avatar = computed(() => chatAvatar(props.chat, t('chat.untitled')))
@@ -22,7 +27,7 @@ const subtitle = computed(() => {
 })
 
 const buttonClass =
-  'flex size-11 shrink-0 items-center justify-center rounded-lg text-text transition-colors duration-150 hover:bg-surface'
+  'flex size-11 shrink-0 items-center justify-center rounded-lg text-text transition-colors duration-150 hover:bg-surface disabled:opacity-40'
 </script>
 
 <template>
@@ -43,6 +48,14 @@ const buttonClass =
       <p v-if="subtitle" class="truncate text-xs text-text-muted">{{ subtitle }}</p>
     </div>
 
+    <template v-if="canCall">
+      <button type="button" :class="buttonClass" :aria-label="t('directCall.voiceCall')" :disabled="directCall.live" @click="directCall.start(chat.id, 'voice')">
+        <Phone class="size-5" aria-hidden="true" />
+      </button>
+      <button type="button" :class="buttonClass" :aria-label="t('directCall.videoCall')" :disabled="directCall.live" @click="directCall.start(chat.id, 'video')">
+        <Video class="size-5" aria-hidden="true" />
+      </button>
+    </template>
     <button v-if="variant === 'drawer'" type="button" :class="buttonClass" :aria-label="t('chat.conversation.openFullPage')" @click="$emit('openFull')">
       <Maximize2 class="size-5" aria-hidden="true" />
     </button>

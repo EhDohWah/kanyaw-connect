@@ -35,6 +35,8 @@ export const useUiStore = defineStore('ui', () => {
   const newGroupOpen = ref(false)
   /** The full-screen call is showing: the shell around it (navigation, sidebar, chat drawer) steps aside. */
   const callOpen = ref(false)
+  /** "Send a voice message" after a call that was not answered: that chat starts recording when it opens. */
+  const recordVoiceIn = ref<string | null>(null)
   /** The chat drawer on wide screens: open or collapsed to a tab, and which chat it shows (none = the list). */
   const drawer = ref<DrawerState>(readDrawer())
   let nextId = 1
@@ -73,6 +75,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
+    recordVoiceIn,
     toasts,
     createMenuOpen,
     newChatOpen,

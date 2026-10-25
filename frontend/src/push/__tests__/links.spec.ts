@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useFakePush } from '@/__tests__/fakePush'
 import { ME, fakeApi, makeUser, restoreApi, settle, signIn } from '@/__tests__/helpers'
-import { installServiceWorkerMessages, notificationRoute } from '@/push/links'
+import { callTarget, installServiceWorkerMessages, notificationRoute } from '@/push/links'
 import { createAppRouter } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { PUSH_OWNER_KEY, usePushStore } from '@/stores/push'
@@ -96,6 +96,28 @@ describe('messages from the service worker', () => {
     ])
   })
 
+  it('a call while a window is open: this window asks for the call and rings', async () => {
+    const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
+    const { fake } = await setUp()
+    const api = fakeApi(() => ({ data: { data: null } }))
+
+    fake.send({ type: 'kc:call', call_id: CALL })
+    await vi.waitFor(() => expect(api.calls.map((c) => c.url)).toContain(`/calls/${CALL}`))
+  })
+
+  it('a call notification opens the call over the meeting, without leaving it', async () => {
+    const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
+    const { fake, router } = await setUp()
+    await router.push(`/rooms/${ROOM}`)
+    useUiStore().callOpen = true
+    const api = fakeApi(() => ({ data: { data: null } }))
+
+    fake.send({ type: 'kc:open', url: `${here}/calls/${CALL}?answer=1` })
+    await vi.waitFor(() => expect(api.calls.map((c) => c.url)).toContain(`/calls/${CALL}`))
+    expect(router.currentRoute.value.path).toBe(`/rooms/${ROOM}`)
+    expect(useUiStore().toasts).toHaveLength(0)
+  })
+
   it('already on that page: nothing happens (and no toast during the meeting it announces)', async () => {
     const { fake, router } = await setUp()
     await router.push(`/rooms/${ROOM}`)
@@ -148,3 +170,20 @@ describe('messages from the service worker', () => {
 })
 
 beforeEach(() => window.localStorage.clear())
+
+describe('call notifications', () => {
+  const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
+
+  it('opens a call page, keeping only ?answer=1', () => {
+    expect(notificationRoute(`${ORIGIN}/calls/${CALL}`, ORIGIN, '/')).toBe(`/calls/${CALL}`)
+    expect(notificationRoute(`${ORIGIN}/calls/${CALL}?answer=1`, ORIGIN, '/')).toBe(`/calls/${CALL}?answer=1`)
+    expect(notificationRoute(`${ORIGIN}/calls/${CALL}?answer=1&x=2`, ORIGIN, '/')).toBe(`/calls/${CALL}`)
+    expect(notificationRoute(`${ORIGIN}/calls/../settings`, ORIGIN, '/')).toBeNull()
+  })
+
+  it('reads the call and whether to answer it', () => {
+    expect(callTarget(`/calls/${CALL}`)).toEqual({ callId: CALL, answer: false })
+    expect(callTarget(`/calls/${CALL}?answer=1`)).toEqual({ callId: CALL, answer: true })
+    expect(callTarget(`/chats/${CALL}`)).toBeNull()
+  })
+})

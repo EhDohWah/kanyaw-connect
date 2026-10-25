@@ -167,3 +167,18 @@ export function browserPush(): BrowserPush {
 export function setBrowserPush(fake: BrowserPush | null): void {
   inUse = fake ?? realBrowserPush
 }
+
+/**
+ * Closes the "X is calling" notification of a call (tag `call-<id>`, see public/sw.js) once it no longer rings here: it
+ * was answered or declined in the app, or on another device. Nothing happens where there are no notifications.
+ */
+export async function closeCallNotification(callId: string): Promise<void> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return
+    const registration = await navigator.serviceWorker.getRegistration(BASE)
+    const shown = (await registration?.getNotifications({ tag: `call-${callId}` })) ?? []
+    shown.forEach((notification) => notification.close())
+  } catch {
+    // not allowed or not there: the notification closes when tapped
+  }
+}

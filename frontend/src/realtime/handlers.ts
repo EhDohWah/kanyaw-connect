@@ -2,6 +2,7 @@ import { i18n } from '@/i18n'
 import type { ChatChannelHandlers, MessagingHandlers, UserChannelHandlers } from '@/realtime/manager'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
+import { useDirectCallStore } from '@/stores/directCall'
 import { useMessagesStore } from '@/stores/messages'
 import { useRoomsStore } from '@/stores/rooms'
 import { useTypingStore } from '@/stores/typing'
@@ -57,6 +58,7 @@ function sharedHandlers(): MessagingHandlers {
 export function userChannelHandlers(): UserChannelHandlers {
   const rooms = useRoomsStore()
   const ui = useUiStore()
+  const directCall = useDirectCallStore()
 
   return {
     ...sharedHandlers(),
@@ -67,6 +69,8 @@ export function userChannelHandlers(): UserChannelHandlers {
       // In the meeting the Waiting list shows it; anywhere else, say so (the host may be reading their chats).
       if (rooms.activeCallId !== event.room_id) ui.toast(i18n.global.t('call.waiting.toast', { name: event.user.name }))
     },
+    callIncoming: ({ call }) => directCall.receive(call),
+    callChanged: ({ call }) => directCall.receive(call),
   }
 }
 

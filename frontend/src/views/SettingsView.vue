@@ -71,6 +71,26 @@ async function setDataSaver(on: boolean): Promise<void> {
   }
 }
 
+/* -------------------------------------------------------------------------------------- calls --- */
+
+/** Both on unless switched off: a call should ring. */
+const ringtone = computed(() => auth.user?.settings.call_ringtone !== false)
+const vibrate = computed(() => auth.user?.settings.call_vibrate !== false)
+const savingCalls = ref(false)
+const callsError = ref<unknown>(null)
+
+async function setCallSetting(key: 'call_ringtone' | 'call_vibrate', on: boolean): Promise<void> {
+  savingCalls.value = true
+  callsError.value = null
+  try {
+    await auth.saveSettings({ [key]: on })
+  } catch (error) {
+    callsError.value = error
+  } finally {
+    savingCalls.value = false
+  }
+}
+
 /* ------------------------------------------------------------------------------------ account --- */
 
 const signingOut = ref(false)
@@ -127,6 +147,25 @@ async function signOut(): Promise<void> {
         </p>
         <p v-if="pushProblem" class="text-sm text-danger" role="alert">{{ pushProblem }}</p>
       </template>
+    </section>
+
+    <section class="flex flex-col gap-3 rounded-xl border border-border p-5" aria-labelledby="settings-calls">
+      <h2 id="settings-calls" class="font-semibold">{{ t('settings.calls.title') }}</h2>
+      <BaseSwitch
+        :model-value="ringtone"
+        :disabled="savingCalls || !auth.user"
+        :label="t('settings.calls.ringtone')"
+        :hint="t('settings.calls.ringtoneHint')"
+        @update:model-value="setCallSetting('call_ringtone', $event)"
+      />
+      <BaseSwitch
+        :model-value="vibrate"
+        :disabled="savingCalls || !auth.user"
+        :label="t('settings.calls.vibrate')"
+        :hint="t('settings.calls.vibrateHint')"
+        @update:model-value="setCallSetting('call_vibrate', $event)"
+      />
+      <p v-if="callsError" class="text-sm text-danger" role="alert">{{ problemText(callsError) }}</p>
     </section>
 
     <section class="flex flex-col gap-3 rounded-xl border border-border p-5" aria-labelledby="settings-meetings">

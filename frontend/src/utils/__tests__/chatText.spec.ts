@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ME, PAW, makeChat, makeMember, makeMessage, person } from '@/__tests__/helpers'
 import { i18n } from '@/i18n'
-import { chatAvatar, chatTitle, messagePreview, personById, systemText } from '@/utils/chatText'
+import { callNotice, chatAvatar, chatTitle, messagePreview, personById, systemText } from '@/utils/chatText'
 
 const t = (key: string, named?: Record<string, unknown>) => i18n.global.t(key, named ?? {})
 
@@ -82,5 +82,48 @@ describe('personById', () => {
     expect(personById(group, PAW)?.name).toBe('Naw Paw Say')
     expect(personById(makeChat(), PAW)?.name).toBe('Naw Paw Say')
     expect(personById(makeChat(), 'nobody')).toBeUndefined()
+  })
+})
+
+describe('call notices, from your side of the call', () => {
+  const call = (meta: Record<string, unknown>) =>
+    makeMessage({ type: 'system', sender: null, sender_id: null, content: 'English fallback', metadata: { event: 'call', call_id: 'c', duration_seconds: null, end_reason: null, ...meta } })
+  const text = (meta: Record<string, unknown>) => systemText(call(meta), t, () => undefined, ME)
+
+  it.each([
+    // [status, end_reason, who called, kind, what you read]
+    ['missed', 'no_answer', PAW, 'voice', 'Missed voice call'],
+    ['missed', 'cancelled', PAW, 'video', 'Missed video call'],
+    ['missed', 'no_answer', ME, 'voice', 'Voice call · No answer'],
+    ['missed', 'cancelled', ME, 'voice', 'Voice call · Cancelled'],
+    ['declined', null, PAW, 'voice', 'Declined voice call'],
+    ['declined', null, ME, 'video', 'Video call · Declined'],
+  ] as const)('%s (%s), called by %s, %s: "%s"', (status, reason, caller, kind, expected) => {
+    expect(text({ status, end_reason: reason, caller_id: caller, kind })).toBe(expected)
+  })
+
+  it('an answered call gives its length, with an incoming or outgoing arrow', () => {
+    expect(text({ status: 'ended', end_reason: 'hung_up', caller_id: PAW, kind: 'voice', duration_seconds: 192 })).toBe('Voice call · 3:12')
+    expect(callNotice(call({ status: 'ended', caller_id: PAW, kind: 'voice', duration_seconds: 192 }), ME)).toMatchObject({ incoming: true, missedByYou: false, time: '3:12' })
+    expect(callNotice(call({ status: 'ended', caller_id: ME, kind: 'video', duration_seconds: 3723 }), ME)).toMatchObject({ incoming: false, time: '1:02:03' })
+  })
+
+  it('only a call you missed is marked as missed (the danger colour)', () => {
+    expect(callNotice(call({ status: 'missed', caller_id: PAW, kind: 'voice' }), ME)?.missedByYou).toBe(true)
+    expect(callNotice(call({ status: 'missed', caller_id: ME, kind: 'voice' }), ME)?.missedByYou).toBe(false)
+  })
+
+  it('anything it does not understand falls back to the server\'s English sentence', () => {
+    expect(callNotice(call({ status: 'ringing', caller_id: PAW, kind: 'voice' }), ME)).toBeNull()
+    expect(callNotice(call({ status: 'ended', caller_id: PAW, kind: 'hologram' }), ME)).toBeNull()
+    expect(text({ status: 'weird', caller_id: PAW, kind: 'voice' })).toBe('English fallback')
+    expect(callNotice(makeMessage({ type: 'text', metadata: { event: 'call', kind: 'voice', status: 'ended' } }), ME)).toBeNull()
+  })
+
+  it('the chat list shows the same short text as the preview', () => {
+    const missed = call({ status: 'missed', end_reason: 'no_answer', caller_id: PAW, kind: 'video' })
+    expect(messagePreview(makeChat({ latest_message: missed }), ME, t)).toBe('Missed video call')
+    const mine = call({ status: 'ended', end_reason: 'hung_up', caller_id: ME, kind: 'voice', duration_seconds: 65 })
+    expect(messagePreview(makeChat({ latest_message: mine }), ME, t)).toBe('Voice call · 1:05')
   })
 })

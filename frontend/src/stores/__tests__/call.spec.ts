@@ -319,7 +319,8 @@ describe('the waiting room', () => {
     lastEcho().setStatus('connected')
     await settle()
 
-    expect(calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual([`get /rooms/${ROOM}`])
+    // (The one-to-one call store also asks `GET /calls/current` after a reconnect; only the meeting's requests count here.)
+    expect(calls.slice(before).filter((c) => c.url.startsWith('/rooms')).map((c) => `${c.method} ${c.url}`)).toEqual([`get /rooms/${ROOM}`])
   })
 })
 

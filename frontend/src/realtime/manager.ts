@@ -9,6 +9,7 @@ import type {
   MessageReadEvent,
   TypingWhisper,
 } from '@/types/chat'
+import type { DirectCallEvent } from '@/types/call'
 import type { RoomDecisionEvent, RoomEndedEvent, RoomJoinRequestedEvent, RoomPresenceEvent, RoomRoleChangedEvent } from '@/types/room'
 
 /** Message and chat events: they arrive on the user channel and on the channel of an open chat. */
@@ -28,6 +29,10 @@ export interface UserChannelHandlers extends MessagingHandlers {
   roomDenied(event: RoomDecisionEvent): void
   /** For hosts and co-hosts: someone is waiting to be let in, even when the meeting is not open here. */
   roomJoinRequested(event: RoomJoinRequestedEvent): void
+  /** Someone is calling you (one-to-one). */
+  callIncoming(event: DirectCallEvent): void
+  /** `call.accepted`, `call.declined`, `call.missed` or `call.ended`: the call moved on. */
+  callChanged(event: DirectCallEvent): void
 }
 
 /** Events on `private-chat.{id}` and `presence-chat.{id}`: only while that chat is open. */
@@ -113,6 +118,11 @@ export class RealtimeManager {
       .listen<RoomDecisionEvent>('.room.admitted', (event) => user.roomAdmitted(event))
       .listen<RoomDecisionEvent>('.room.denied', (event) => user.roomDenied(event))
       .listen<RoomJoinRequestedEvent>('.room.join_requested', (event) => user.roomJoinRequested(event))
+      .listen<DirectCallEvent>('.call.incoming', (event) => user.callIncoming(event))
+      .listen<DirectCallEvent>('.call.accepted', (event) => user.callChanged(event))
+      .listen<DirectCallEvent>('.call.declined', (event) => user.callChanged(event))
+      .listen<DirectCallEvent>('.call.missed', (event) => user.callChanged(event))
+      .listen<DirectCallEvent>('.call.ended', (event) => user.callChanged(event))
 
     for (const [chatId, watch] of this.watches) this.subscribe(chatId, watch)
     if (this.roomWatch) this.subscribeRoom(this.roomWatch)

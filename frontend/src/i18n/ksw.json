@@ -121,7 +121,8 @@
     "meetingsTitle": "Meetings",
     "meetingsText": "Your video meetings will appear here.",
     "roomTitle": "Meeting",
-    "roomText": "The meeting room will open here."
+    "roomText": "The meeting room will open here.",
+    "callTitle": "Call"
   },
   "profile": {
     "title": "Profile",
@@ -165,7 +166,15 @@
     },
     "meetings": "Meetings",
     "dataSaver": "Data saver: turn off incoming video",
-    "dataSaverHint": "In meetings, other people's cameras stay off to save mobile data. Screen shares still show. You can also change it during a meeting."
+    "dataSaverHint": "In meetings, other people's cameras stay off to save mobile data. Screen shares still show. You can also change it during a meeting.",
+    "calls": {
+      "title": "Calls",
+      "ringtone": "Ringtone",
+      "ringtoneHint": "Play a ringtone when someone calls you.",
+      "vibrate": "Vibration",
+      "vibrateHint": "Vibrate when someone calls you, on phones that can.",
+      "saveFailed": "The setting could not be saved. Please try again."
+    }
   },
   "notFound": {
     "title": "Page not found",
@@ -204,7 +213,30 @@
     },
     "system": {
       "roomCreated": "{name} started a video meeting",
-      "joinMeeting": "Join meeting"
+      "joinMeeting": "Join meeting",
+      "call": {
+        "voice": {
+          "missed": "Missed voice call",
+          "noAnswer": "Voice call · No answer",
+          "cancelled": "Voice call · Cancelled",
+          "declinedByYou": "Declined voice call",
+          "declined": "Voice call · Declined",
+          "ended": "Voice call · {time}"
+        },
+        "video": {
+          "missed": "Missed video call",
+          "noAnswer": "Video call · No answer",
+          "cancelled": "Video call · Cancelled",
+          "declinedByYou": "Declined video call",
+          "declined": "Video call · Declined",
+          "ended": "Video call · {time}"
+        },
+        "incoming": "Incoming",
+        "outgoing": "Outgoing",
+        "callBack": "Call back",
+        "callBackVoice": "Call back (voice call)",
+        "callBackVideo": "Call back (video call)"
+      }
     },
     "conversation": {
       "loadError": "This conversation could not be loaded.",
@@ -639,5 +671,70 @@
     "unsupported": "This voice message can't play on this device.",
     "download": "Download it",
     "loadFailed": "The voice message could not be loaded. Check your connection and try again."
+  },
+  "directCall": {
+    "voiceCall": "Voice call",
+    "videoCall": "Video call",
+    "calling": "Calling…",
+    "connecting": "Connecting…",
+    "reconnecting": "Reconnecting…",
+    "incomingVoice": "Incoming voice call",
+    "incomingVideo": "Incoming video call",
+    "accept": "Accept",
+    "decline": "Decline",
+    "answerWithoutVideo": "Answer without video",
+    "tapToHear": "Tap to hear ringing",
+    "tapToHearThem": "Tap to hear {name}",
+    "end": "End",
+    "microphone": "Microphone",
+    "camera": "Camera",
+    "flip": "Flip camera",
+    "speaker": "Speaker",
+    "speakerDefault": "Default speaker",
+    "minimize": "Minimize call",
+    "returnToCall": "Return to call",
+    "ongoingBar": "Call with {name}",
+    "swap": "Swap videos",
+    "yourVideo": "Your video",
+    "theirVideo": "Video of {name}",
+    "cameraOff": "{name}'s camera is off",
+    "quality": {
+      "poor": "Weak connection",
+      "lost": "Connection lost"
+    },
+    "screenLabel": "Call with {name}",
+    "ended": {
+      "hungUp": "Call ended",
+      "hungUpTime": "Call ended · {time}",
+      "declined": "{name} declined",
+      "declinedByYou": "Call declined",
+      "noAnswer": "{name} didn't answer",
+      "cancelled": "Call cancelled",
+      "missed": "Missed call",
+      "busy": "{name} is on another call",
+      "alreadyInCall": "You are already in a call",
+      "answeredElsewhere": "Answered on another device",
+      "gone": "This call has ended",
+      "connectionLost": "The connection was lost",
+      "failed": "The call could not connect"
+    },
+    "callAgain": "Call again",
+    "sendVoiceMessage": "Send a voice message",
+    "close": "Close",
+    "alreadyInCall": "You are already in a call.",
+    "flipFailed": "The camera could not be switched.",
+    "speakerFailed": "That speaker could not be used.",
+    "banner": {
+      "calling": "{name} is calling",
+      "otherTab": "Ringing in another tab of this app",
+      "inMeeting": "You are in a meeting",
+      "leaveAndAnswer": "Leave meeting and answer"
+    },
+    "page": {
+      "loading": "Opening the call…",
+      "notFound": "This call could not be found.",
+      "title": "Call"
+    },
+    "someone": "Someone"
   }
 }

@@ -244,3 +244,110 @@ describe('the service worker: its life', () => {
     expect(two.postMessage).toHaveBeenCalledWith({ type: 'kc:push-changed' })
   })
 })
+
+describe('the service worker: calls', () => {
+  const CALL = '0195e2c4-0030-7a2f-812f-5f3a9c05ade1'
+  const incoming = (over: Record<string, unknown> = {}) => ({
+    type: 'call.incoming',
+    call_id: CALL,
+    chat_id: CHAT,
+    room_id: ROOM,
+    kind: 'video',
+    title: 'Saw Eh Doh',
+    body: 'Incoming video call',
+    icon: 'https://api.example.org/storage/avatars/a_256.webp',
+    decline_url: `https://api.example.org/api/v1/calls/${CALL}/decline?expires=1773479745&signature=abc`,
+    ring_expires_at: new Date(Date.now() + 40_000).toISOString(),
+    ...over,
+  })
+
+  let w: ReturnType<typeof worker>
+  beforeEach(() => {
+    w = worker()
+  })
+
+  it('with the app open and visible: tells the window to ring, and shows no notification', async () => {
+    const visible = fakeWindow('https://kanyaw.example/chats', { visibilityState: 'visible' })
+    const hidden = fakeWindow('https://kanyaw.example/', { visibilityState: 'hidden' })
+    w.windows.push(visible, hidden)
+
+    await w.push(incoming())
+
+    expect(visible.postMessage).toHaveBeenCalledWith({ type: 'kc:call', call_id: CALL })
+    expect(hidden.postMessage).not.toHaveBeenCalled()
+    expect(w.self.registration.showNotification).not.toHaveBeenCalled()
+  })
+
+  it('otherwise: a notification that stays until answered, with Answer and Decline, the caller\'s picture, and a ring', async () => {
+    w.windows.push(fakeWindow('https://kanyaw.example/', { visibilityState: 'hidden' }))
+
+    await w.push(incoming())
+
+    const [title, options] = w.shown()
+    expect(title).toBe('Saw Eh Doh')
+    expect(options).toMatchObject({
+      body: 'Incoming video call',
+      icon: 'https://api.example.org/storage/avatars/a_256.webp',
+      tag: `call-${CALL}`,
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [500, 250, 500, 250, 500],
+      actions: [
+        { action: 'answer', title: 'Answer' },
+        { action: 'decline', title: 'Decline' },
+      ],
+      data: { url: `https://kanyaw.example/calls/${CALL}`, call: { call_id: CALL, decline_url: incoming().decline_url } },
+    })
+  })
+
+  it('shows nothing for a call whose ringing is already over (a late delivery)', async () => {
+    await w.push(incoming({ ring_expires_at: new Date(Date.now() - 1000).toISOString() }))
+    expect(w.self.registration.showNotification).not.toHaveBeenCalled()
+  })
+
+  it('never shows a picture or uses a decline link from a strange address', async () => {
+    await w.push(incoming({ icon: 'javascript:alert(1)', decline_url: 'ftp://evil.example/x' }))
+    const [, options] = w.shown()
+    expect(options.icon).toBe('https://kanyaw.example/icons/icon-192.png')
+    expect((options.data as { call: { decline_url: unknown } }).call.decline_url).toBeNull()
+  })
+
+  it('a missed call replaces the ringing notification (same tag) and opens the chat', async () => {
+    await w.push({ type: 'call.missed', call_id: CALL, chat_id: CHAT, kind: 'voice', title: 'Saw Eh Doh', body: 'Missed voice call' })
+
+    const [title, options] = w.shown()
+    expect(title).toBe('Saw Eh Doh')
+    expect(options).toMatchObject({ body: 'Missed voice call', tag: `call-${CALL}`, data: { url: `https://kanyaw.example/chats/${CHAT}` } })
+    expect(options.requireInteraction).toBeUndefined()
+  })
+
+  function callNotification() {
+    return { close: vi.fn(), data: { url: `https://kanyaw.example/calls/${CALL}`, call: { call_id: CALL, decline_url: incoming().decline_url } } }
+  }
+
+  it('Decline declines from the worker with the signed link, and opens nothing', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const notification = callNotification()
+
+    await w.fire('notificationclick', { notification, action: 'decline' })
+
+    expect(notification.close).toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith(incoming().decline_url, { method: 'POST', headers: { Accept: 'application/json' } })
+    expect(w.self.clients.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('Answer opens the call with ?answer=1 (the app checks it still rings, then answers)', async () => {
+    await w.fire('notificationclick', { notification: callNotification(), action: 'answer' })
+    expect(w.self.clients.openWindow).toHaveBeenCalledWith(`https://kanyaw.example/calls/${CALL}?answer=1`)
+  })
+
+  it('a tap on the notification itself (or a browser without actions) opens the incoming screen', async () => {
+    const open = fakeWindow('https://kanyaw.example/', { visibilityState: 'hidden' })
+    w.windows.push(open)
+
+    await w.fire('notificationclick', { notification: callNotification(), action: '' })
+
+    expect(open.postMessage).toHaveBeenCalledWith({ type: 'kc:open', url: `https://kanyaw.example/calls/${CALL}` })
+  })
+})

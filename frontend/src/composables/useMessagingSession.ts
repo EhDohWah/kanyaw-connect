@@ -2,8 +2,11 @@ import { onBeforeUnmount, onMounted, watch } from 'vue'
 
 import { realtime } from '@/realtime'
 import { userChannelHandlers } from '@/realtime/handlers'
+import { ringer } from '@/realtime/ringer'
+import { tabLeader } from '@/realtime/tabLeader'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
+import { useDirectCallStore } from '@/stores/directCall'
 import { useDraftsStore } from '@/stores/drafts'
 import { useFeedStore } from '@/stores/feed'
 import { useMessagesStore } from '@/stores/messages'
@@ -37,10 +40,13 @@ export function useMessagingSession(): void {
   const rooms = useRoomsStore()
   const ui = useUiStore()
   const push = usePushStore()
+  const directCall = useDirectCallStore()
 
   let startedFor: string | null = null
   let presenceTimer: ReturnType<typeof setInterval> | undefined
   let presenceSoon: ReturnType<typeof setTimeout> | undefined
+  /** Call sounds unlocked by the first tap, and this tab's place among the app's other tabs. */
+  let stopCallHelpers: (() => void)[] = []
 
   /** Everyone we can name from our chats: the other person of each direct chat, and members of groups opened so far. */
   const knownPeopleIds = (): string[] => chats.knownPeople(auth.user?.id ?? '').map((person) => person.id)
@@ -65,6 +71,9 @@ export function useMessagingSession(): void {
     })
 
     void chats.fetchChats()
+    // A call ringing for you, or one you were in before a reload (the socket may take a while to come up).
+    stopCallHelpers = [ringer.install(), tabLeader.start()]
+    void directCall.resync()
     // Signing out ended this browser's notifications; whoever had them on gets them back.
     void push.restore()
     presenceTimer = setInterval(() => {
@@ -79,6 +88,9 @@ export function useMessagingSession(): void {
     presenceSoon = undefined
     startedFor = null
 
+    directCall.reset()
+    stopCallHelpers.forEach((stopHelper) => stopHelper())
+    stopCallHelpers = []
     realtime.disconnect()
     chats.reset()
     messages.reset()

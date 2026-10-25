@@ -40,12 +40,17 @@ export function openMicrophone(deviceId?: string): Promise<LocalAudioTrack> {
   return createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true, ...(deviceId ? { deviceId } : {}) })
 }
 
-/** Cameras or microphones, with their names once the browser has been allowed to use one (it hides them until then). */
-export function listDevices(kind: 'audioinput' | 'videoinput'): Promise<MediaDeviceInfo[]> {
+/** Cameras, microphones or speakers, with their names once the browser has been allowed to use one (it hides them until then). */
+export function listDevices(kind: 'audioinput' | 'videoinput' | 'audiooutput'): Promise<MediaDeviceInfo[]> {
   return Room.getLocalDevices(kind, false)
 }
 
 /** Phones (Android Chrome, iOS Safari) cannot share their screen: the button is shown only where it works. */
 export function canShareScreen(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+}
+
+/** Can the page choose which speaker the call is heard through? (Desktop Chrome, Edge and Firefox; not phones or Safari.) */
+export function canPickSpeaker(): boolean {
+  return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 }

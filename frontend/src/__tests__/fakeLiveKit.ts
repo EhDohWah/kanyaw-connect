@@ -58,6 +58,7 @@ const kindOf = (source: Track.Source): 'audio' | 'video' => (source === Track.So
 export class FakeParticipant {
   readonly publications = new Map<Track.Source, FakePublication>()
   isSpeaking = false
+  audioLevel = 0
   connectionQuality: ConnectionQuality = ConnectionQuality.Good
   joinedAt: Date
   /** Local participant only: what the call published, and the text messages it sent. */

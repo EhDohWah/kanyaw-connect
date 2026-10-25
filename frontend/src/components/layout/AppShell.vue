@@ -15,6 +15,7 @@ import { useHeartbeat } from '@/composables/useHeartbeat'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useMessagingSession } from '@/composables/useMessagingSession'
 import { useAuthStore } from '@/stores/auth'
+import { useDirectCallStore } from '@/stores/directCall'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useUiStore } from '@/stores/ui'
 import { errorMessage } from '@/utils/errorMessage'
@@ -24,6 +25,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const connection = useRealtimeStore()
 const ui = useUiStore()
+const directCall = useDirectCallStore()
 const wide = useMediaQuery('(min-width: 1024px)')
 
 useHeartbeat()
@@ -41,7 +43,8 @@ async function retry(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex min-h-dvh bg-bg text-text">
+  <!-- Room at the top for the "Return to call" bar while a call goes on in the background. -->
+  <div :class="['flex min-h-dvh bg-bg text-text', directCall.live && !directCall.expanded ? 'pt-11' : '']">
     <!-- Tablet and wide screens: navigation on the left (the navigation inside is already a landmark). -->
     <div v-if="!ui.callOpen" class="sticky top-0 hidden h-dvh w-[72px] shrink-0 border-r border-border md:block lg:w-64">
       <SideNav />

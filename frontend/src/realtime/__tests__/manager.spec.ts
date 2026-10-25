@@ -19,7 +19,14 @@ const messagingHandlers = (): MessagingHandlers => ({
   chatMemberAdded: vi.fn(),
   chatMemberRemoved: vi.fn(),
 })
-const userHandlers = (): UserChannelHandlers => ({ ...messagingHandlers(), roomAdmitted: vi.fn(), roomDenied: vi.fn(), roomJoinRequested: vi.fn() })
+const userHandlers = (): UserChannelHandlers => ({
+  ...messagingHandlers(),
+  roomAdmitted: vi.fn(),
+  roomDenied: vi.fn(),
+  roomJoinRequested: vi.fn(),
+  callIncoming: vi.fn(),
+  callChanged: vi.fn(),
+})
 const chatHandlers = (): ChatChannelHandlers => ({ ...messagingHandlers(), messageUpdated: vi.fn(), messageDeleted: vi.fn(), typing: vi.fn() })
 const roomHandlers = (): RoomChannelHandlers => ({
   participantJoined: vi.fn(),
@@ -277,6 +284,21 @@ describe('typing whispers', () => {
     manager.sendTyping('other', 'u1', true, 10_000)
 
     expect(whispers()).toHaveLength(0)
+  })
+})
+
+describe('one-to-one calls', () => {
+  it('hears call.incoming, and the four ways a call moves on, on the user channel', () => {
+    const { manager, user, h } = make()
+    manager.connect('t', 'u1', user, h)
+    const channel = lastEcho().channels.get('private-user.u1')!
+    const call = { id: 'c1', status: 'ringing' }
+
+    channel.emit('.call.incoming', { call })
+    for (const event of ['accepted', 'declined', 'missed', 'ended']) channel.emit(`.call.${event}`, { call: { ...call, status: event } })
+
+    expect(user.callIncoming).toHaveBeenCalledWith({ call })
+    expect(vi.mocked(user.callChanged).mock.calls.map(([event]) => event.call.status)).toEqual(['accepted', 'declined', 'missed', 'ended'])
   })
 })
 

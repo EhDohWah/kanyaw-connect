@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { nextTick, watch } from 'vue'
+import { defineAsyncComponent, nextTick, watch } from 'vue'
 import { RouterView, START_LOCATION, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 import ToastHost from '@/components/common/ToastHost.vue'
+import { useAuthStore } from '@/stores/auth'
+import { useDirectCallStore } from '@/stores/directCall'
+
+/** Loaded the first time a call shows (the call screens pull in the video code). */
+const DirectCallOverlay = defineAsyncComponent(() => import('@/components/call/direct/DirectCallOverlay.vue'))
 
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
+const directCall = useDirectCallStore()
 
 function updateTitle(): void {
   const page = route.meta.titleKey ? t(route.meta.titleKey) : ''
@@ -39,5 +46,7 @@ router.afterEach(async (to, from, failure) => {
     {{ t('common.skipToContent') }}
   </a>
   <RouterView />
+  <!-- A one-to-one call stays on screen whatever page is open underneath. -->
+  <DirectCallOverlay v-if="auth.user && directCall.visible" />
   <ToastHost />
 </template>

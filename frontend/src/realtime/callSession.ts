@@ -167,12 +167,20 @@ export class CallSession {
     }
   }
 
-  async switchDevice(kind: 'audioinput' | 'videoinput', deviceId: string): Promise<void> {
+  /** A camera or microphone, or (where the browser allows it: `setSinkId`) the speaker the others are heard through. */
+  async switchDevice(kind: 'audioinput' | 'videoinput' | 'audiooutput', deviceId: string): Promise<void> {
     await this.room.switchActiveDevice(kind, deviceId)
   }
 
-  activeDevice(kind: 'audioinput' | 'videoinput'): string | undefined {
+  activeDevice(kind: 'audioinput' | 'videoinput' | 'audiooutput'): string | undefined {
     return this.room.getActiveDevice(kind)
+  }
+
+  /** How loud someone is right now, 0 to 1 (LiveKit measures it; it changes too often to be part of the snapshot). */
+  audioLevelOf(identity: string): number {
+    const participant = identity === this.room.localParticipant.identity ? this.room.localParticipant : this.room.remoteParticipants.get(identity)
+    const level = participant?.audioLevel ?? 0
+    return Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
   }
 
   /** Data saver: stop (or start again) receiving the others' cameras. Screen shares still come, so slides can be followed. */

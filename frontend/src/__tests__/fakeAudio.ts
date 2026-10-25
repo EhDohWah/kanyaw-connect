@@ -9,6 +9,39 @@ export const audioState = {
   /** The RMS level the analyser reports now (0–1). */
   level: 0,
   contexts: [] as FakeAudioContext[],
+  /** Every tone the ringer played: its frequencies, in order. */
+  tones: [] as number[][],
+  /** The state new contexts start in (`suspended`: the page has not been tapped yet). */
+  startState: 'running' as 'running' | 'suspended',
+  /** Whether `resume()` works (a browser refuses it until the person has tapped the page). */
+  resumeWorks: true,
+}
+
+class FakeParam {
+  readonly values: number[] = []
+  setValueAtTime(value: number): this {
+    this.values.push(value)
+    return this
+  }
+  linearRampToValueAtTime(value: number): this {
+    this.values.push(value)
+    return this
+  }
+}
+
+export class FakeOscillator {
+  type = 'sine'
+  readonly frequency = new FakeParam()
+  connect(): void {}
+  start(): void {
+    audioState.tones.push(this.frequency.values)
+  }
+  stop(): void {}
+}
+
+export class FakeGain {
+  readonly gain = new FakeParam()
+  connect(): void {}
 }
 
 export class FakeAnalyserNode {
@@ -22,18 +55,26 @@ export class FakeAnalyserNode {
 }
 
 export class FakeAudioContext {
-  state: 'running' | 'suspended' | 'closed' = 'running'
+  state: 'running' | 'suspended' | 'closed' = audioState.startState
   readonly currentTime = 0
   readonly destination = {}
   close = vi.fn(async () => {
     this.state = 'closed'
   })
   resume = vi.fn(async () => {
-    this.state = 'running'
+    if (audioState.resumeWorks) this.state = 'running'
   })
 
   constructor() {
     audioState.contexts.push(this)
+  }
+
+  createOscillator(): FakeOscillator {
+    return new FakeOscillator()
+  }
+
+  createGain(): FakeGain {
+    return new FakeGain()
   }
 
   createAnalyser(): FakeAnalyserNode {
@@ -48,6 +89,9 @@ export class FakeAudioContext {
 export function useFakeAudio(): typeof audioState {
   audioState.level = 0
   audioState.contexts = []
+  audioState.tones = []
+  audioState.startState = 'running'
+  audioState.resumeWorks = true
   vi.stubGlobal('AudioContext', FakeAudioContext)
   return audioState
 }

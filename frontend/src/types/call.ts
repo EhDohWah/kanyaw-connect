@@ -1,3 +1,4 @@
+import type { PublicUser } from '@/types/user'
 import type { RoomRole } from '@/types/room'
 
 /** A video (camera or screen) a tile can show. LiveKit's tracks have this shape; tests use a stand-in. */
@@ -59,3 +60,32 @@ export type JoinProblem =
   | { kind: 'network' }
   | { kind: 'connect-failed' }
   | { kind: 'unknown'; message: string }
+
+/* ------------------------------------------------------------------------------- one-to-one calls --- */
+
+export type DirectCallKind = 'voice' | 'video'
+export type DirectCallStatus = 'ringing' | 'ongoing' | 'ended' | 'declined' | 'missed'
+export type DirectCallEndReason = 'hung_up' | 'connection_lost' | 'cancelled' | 'no_answer'
+
+/** A one-to-one call (docs/API.md, the Call object). Its media is a two-seat room (`room_id`). */
+export interface DirectCall {
+  id: string
+  chat_id: string
+  room_id: string
+  kind: DirectCallKind
+  status: DirectCallStatus
+  end_reason: DirectCallEndReason | null
+  /** `null` only once that account has been deleted. */
+  caller: PublicUser | null
+  callee: PublicUser | null
+  created_at: string
+  ring_expires_at: string
+  answered_at: string | null
+  ended_at: string | null
+  duration_seconds: number | null
+}
+
+/** `call.incoming`, `call.accepted`, `call.declined`, `call.missed`, `call.ended` on `private-user.{me}`. */
+export interface DirectCallEvent {
+  call: DirectCall
+}

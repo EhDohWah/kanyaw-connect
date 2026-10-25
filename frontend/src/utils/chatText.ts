@@ -1,5 +1,6 @@
 import type { Chat, Message } from '@/types/chat'
 import type { PublicUser } from '@/types/user'
+import { formatDuration } from '@/utils/dates'
 
 export type Translate = (key: string, named?: Record<string, unknown>) => string
 
@@ -41,7 +42,7 @@ export function messagePreview(chat: Chat, meId: string, t: Translate): string {
       body = message.content?.trim() ? message.content : t('chat.preview.file')
       break
     case 'system':
-      return systemText(message, t, (userId) => (userId === meId ? t('common.you') : personById(chat, userId)?.name))
+      return systemText(message, t, (userId) => (userId === meId ? t('common.you') : personById(chat, userId)?.name), meId)
     default:
       body = message.content ?? ''
   }
@@ -57,7 +58,9 @@ export function messagePreview(chat: Chat, meId: string, t: Translate): string {
  * The sentence for a message written by the server ("X started a video room"). It is built from `metadata`, in the
  * app's language; `content` is only an English fallback for events this version does not know.
  */
-export function systemText(message: Message, t: Translate, nameOf: (userId: string) => string | undefined): string {
+export function systemText(message: Message, t: Translate, nameOf: (userId: string) => string | undefined, meId?: string): string {
+  const call = meId !== undefined ? callNotice(message, meId) : null
+  if (call) return t(`chat.system.call.${call.kind}.${call.key}`, { time: call.time ?? '' })
   if (message.metadata.event === 'room_created') {
     const hostId = typeof message.metadata.host_id === 'string' ? message.metadata.host_id : undefined
     const name = hostId ? nameOf(hostId) : undefined
@@ -73,4 +76,39 @@ export function personById(chat: Pick<Chat, 'members' | 'other_user'>, userId: s
   const member = chat.members?.find((entry) => entry.user_id === userId)
   if (member) return member.user
   return chat.other_user?.id === userId ? chat.other_user : undefined
+}
+
+/** A call's line in the chat, seen from your side (docs/API.md, section 8: `metadata.event` is `call`). */
+export interface CallNotice {
+  kind: 'voice' | 'video'
+  /** A key under `chat.system.call.<kind>`. */
+  key: 'missed' | 'noAnswer' | 'cancelled' | 'declinedByYou' | 'declined' | 'ended'
+  /** You were called (an incoming arrow), or you called (outgoing). */
+  incoming: boolean
+  /** A call you missed: shown in the danger colour. */
+  missedByYou: boolean
+  /** "3:12" for a call that was answered. */
+  time: string | null
+}
+
+/** The call notice for a system message, or null when it is not one (or not one this version understands). */
+export function callNotice(message: Pick<Message, 'type' | 'metadata'>, meId: string): CallNotice | null {
+  const meta = message.metadata
+  if (message.type !== 'system' || meta.event !== 'call') return null
+  const kind = meta.kind === 'voice' || meta.kind === 'video' ? meta.kind : null
+  if (!kind) return null
+  const incoming = typeof meta.caller_id === 'string' && meta.caller_id !== meId
+  const seconds = typeof meta.duration_seconds === 'number' && Number.isFinite(meta.duration_seconds) ? meta.duration_seconds : null
+
+  switch (meta.status) {
+    case 'missed':
+      if (incoming) return { kind, key: 'missed', incoming, missedByYou: true, time: null }
+      return { kind, key: meta.end_reason === 'cancelled' ? 'cancelled' : 'noAnswer', incoming, missedByYou: false, time: null }
+    case 'declined':
+      return { kind, key: incoming ? 'declinedByYou' : 'declined', incoming, missedByYou: false, time: null }
+    case 'ended':
+      return { kind, key: 'ended', incoming, missedByYou: false, time: formatDuration((seconds ?? 0) * 1000) }
+    default:
+      return null
+  }
 }

@@ -14,6 +14,8 @@ export class ApiError extends Error {
   readonly fieldErrors: Record<string, string[]>
   /** Seconds to wait before trying again (429). */
   readonly retryAfter: number | undefined
+  /** The server's whole answer, for the few errors that carry more (`409 call_not_ringing` has the call). */
+  readonly body: unknown
 
   constructor(init: {
     status: number
@@ -21,6 +23,7 @@ export class ApiError extends Error {
     code?: string
     fieldErrors?: Record<string, string[]>
     retryAfter?: number
+    body?: unknown
   }) {
     super(init.message)
     this.name = 'ApiError'
@@ -28,6 +31,7 @@ export class ApiError extends Error {
     this.code = init.code
     this.fieldErrors = init.fieldErrors ?? {}
     this.retryAfter = init.retryAfter
+    this.body = init.body ?? null
   }
 
   get isNetwork(): boolean {
@@ -65,6 +69,7 @@ export function toApiError(error: unknown): ApiError {
       code: typeof body.code === 'string' ? body.code : undefined,
       fieldErrors: body.errors ?? {},
       ...(retryAfter !== undefined ? { retryAfter } : {}),
+      body,
     })
   }
 
