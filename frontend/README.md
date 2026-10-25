@@ -244,7 +244,7 @@ These parts of the product have no backend yet, or are not built yet:
 | Writing a post | Mock: the picture is shrunk to a small copy and kept in the browser; nothing is sent anywhere |
 | Sharing a post | The link (`/?post=<id>`) opens the feed: there is no page for one post |
 | Chats and messages | Connected (Phase 2; voice messages Phase 6A). Not built: "seen by", encrypted chats (read-only notice) |
-| Meetings and video | Connected (Phase 4). The in-call chat goes over LiveKit (the API has no endpoint for it) and is not saved: it is gone when the meeting ends, and the chat says so. No recording. Not built: calling one person directly with ringing (planned for Phase 6; today, start a meeting and share it) |
+| Meetings and video | Connected (Phase 4). The in-call chat goes over LiveKit (the API has no endpoint for it) and is not saved: it is gone when the meeting ends, and the chat says so. No recording. One-to-one calls with ringing are built (Phase 6C; see Calls above) |
 | Push notifications | Connected (Phase 5). The text is the server's, in English |
 | "Forgot password", changing the password, email verification | The backend has no endpoints |
 | Finding people you share no chat with | The backend has no user search |
