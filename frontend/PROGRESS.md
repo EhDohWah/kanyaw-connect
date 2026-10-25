@@ -10,8 +10,8 @@ item they belong to.
 | 2. Messaging | Done, approved |
 | 3. Feed and sidebar | Done, reviewed and fixed (see "Review after Phase 3"), approved |
 | 4. Video | Done, approved |
-| 5. Push and polish | Done, waiting for review |
-| 6. Voice messages and one-to-one calls (added after the build prompt) | Planned, after Phase 5 |
+| 5. Push and polish | Done, approved |
+| 6. Voice messages and one-to-one calls (Phase 6 prompt) | 6A done, waiting for review; 6B and 6C not started |
 
 ## Phase 1: Foundation
 
@@ -741,13 +741,97 @@ with a meeting).
 - docs/API.md's example click handler always opens a new window; the app focuses the open one instead (above).
 - Nothing blocked the phase.
 
-## Phase 6 (planned): voice messages and one-to-one calls
+## Phase 6: voice messages and one-to-one calls
 
-Added after the build prompt, to start once Phase 5 is approved. Not designed in detail yet.
+From the Phase 6 build prompt, in three parts, each reviewed before the next: 6A voice messages, 6B the calls backend,
+6C calls in the app.
 
-1. **Recording voice messages** in a chat (the browser's MediaRecorder: record, see the time, cancel or send), sent through
-   the existing attachment and message endpoints. The backend already accepts `voice` messages; no backend change.
-2. **One-to-one calls**: "Video call" and "Voice call" in a direct chat, an incoming-call screen with a ringtone, a voice-only
-   call layout, and notifications that open the call. Today's API can start a meeting linked to the direct chat; a small
-   backend addition (a call invitation with ringing / declined / missed) would let the caller know when the other person
-   declines or does not answer.
+### 6A · Voice messages
+
+Backend:
+
+- [x] **Voice uploads typed as audio** (`StoreAttachment`): when the content is detected as `video/webm`, `video/mp4` or
+  `video/ogg` and the upload declares an `audio/*` type, it is stored as `audio/webm`, `audio/mp4` or `audio/ogg`. Only
+  those three can be relabelled and the container always stays the one the content proves. Tested with real audio-only
+  files made with ffmpeg (`tests/Fixtures/audio`, with the commands in its README), and a voice message is accepted with
+  each; a WebM declared as video, an image declared as audio, and anything in an encrypted chat are not relabelled.
+  - Checked in a real Chromium: its MediaRecorder's MP4 is detected as `video/mp4` and its WebM as `video/webm` (exactly
+    the refused case the prompt describes); both are now stored as audio.
+- [x] **Length and waveform**: `metadata.duration_ms` (integer, 1–600000) and `metadata.waveform` (16–64 integers of 0–255)
+  for `voice` messages only, stored and returned as sent. Validated as real JSON numbers (`integer:strict`: `"4200"` is
+  refused), a list (not an object). Other types still take only `attachment_id`.
+  - Deviation: not in encrypted chats either, where the length and loudness of a recording would tell the server
+    something about what was said (the app does not send in encrypted chats anyway).
+- [x] Added (not asked for, needed for the part to work): attachment files on the server's disk answer **byte ranges**
+  (`206 Partial Content`). Laravel's storage response streamed the whole file and ignored `Range`; Safari, on iPhones too,
+  plays audio and video only from servers that answer ranges, and every browser uses them to seek. Non-ASCII file names
+  keep a readable fallback.
+- [x] `docs/API.md`: the Message object, `POST /chats/{chat}/messages` (fields, a voice example, errors), the upload rule
+  for voice recordings, and ranges on the file endpoint.
+
+Frontend:
+
+- [x] **Recording** (`useVoiceRecorder`, `VoiceRecorderBar`, in `Composer.vue`): with the box empty, Send is a microphone
+  ("Record voice message"); tap to start; the bar in place of the box has a red dot (pulsing, and still with reduced
+  motion), the timer, a live level meter, Delete, "Stop and listen" (a preview to play before sending) and Send (which
+  also works while still recording). Hidden where MediaRecorder or getUserMedia is missing; attaching still works.
+  - Microphone `{ channelCount: 1, echoCancellation, noiseSuppression, autoGainControl }`; the first of MP4/AAC, MP4,
+    WebM/Opus, Ogg/Opus the recorder supports, at 32 kbps; uploaded as `voice-<time>.<m4a|webm|ogg>` typed with the base
+    type, so the server's rule applies.
+  - Note: Chrome cannot record AAC, so on Chrome and Android the first format it supports is MP4 with **Opus** inside
+    (checked with ffprobe). It plays in Chrome, Firefox and current Safari; an older iPhone may not play it and shows the
+    "can't play on this device" message with a download link.
+  - The length from the recording's own clock (start, pauses, stop), never from the file; the waveform is 48 values from
+    the RMS level sampled every 50 ms with an `AnalyserNode`, averaged into equal stretches and scaled to the loudest
+    (near-silence is not blown up to full height).
+  - At most 5 minutes (stops, keeps it, says so); under 1 second is dropped with a note. The microphone is turned off the
+    moment recording stops or is deleted (before the recorder has finished writing), and when the composer goes away.
+  - Interrupted (the microphone track ends, the recorder fails, or `interruptRecording()` for an incoming call in 6C):
+    the recording so far goes to the preview, with a note.
+  - A blocked or missing microphone gets the meeting pre-join's words ("The browser is not allowing the microphone.
+    Allow it in the browser's settings…"), ending "then try again" rather than "or join without it".
+  - The recorder does not use `livekit-client` (the meeting code's `mediaProblem` does), so the chat does not load the
+    530 KB video library; checked in the build.
+  - Sending is the existing optimistic send with the length and waveform added: the bubble appears at once and plays from
+    the recording, upload progress shows on it, "Tap to retry" uses the same `client_id` and does not upload again once
+    the upload went through; the file stays in memory until sent. A reply being written is kept.
+- [x] **Playing** (`VoicePlayer`, the voice branch of `MessageMedia.vue`; `voicePlayback` store): `preload="none"`,
+  play/pause, the waveform from `metadata.waveform` (32 even bars without one), the length from `metadata.duration_ms`
+  or the file once known (not Chrome's "Infinity"), the time, and 1× → 1.5× → 2×. The waveform is a slider ("1:05 of
+  2:30"): tap or drag, arrows ±5 s, Home and End; a seek before anything is downloaded is applied when it arrives. One
+  plays at a time across the app. A file the device cannot play: "This voice message can't play on this device." with a
+  download link; a network failure says so and can be tried again. An expired signed link is refreshed once with
+  `GET /messages/{id}` (as pictures are) and playback carries on from where it was.
+- [x] Settings unchanged.
+- [x] Tests, mutation checks, real-browser run, this file (below).
+
+### Verification (6A)
+
+- Backend: `php artisan test` passes (**1088 tests**, 31 new: real audio-only WebM, MP4 and Ogg uploads, each sent as a voice
+  message, the cases that must not be relabelled, byte ranges, and every voice metadata rule), and Pint passes.
+- Frontend: `npm run build`, `npm run type-check` and `npm run test` pass: **1236 tests in 85 files** (1171 before).
+- Real Chromium with its fake microphone, against the running API: **34 checks pass** (recording, the preview, the server
+  storing Chrome's own recording as audio, the voice message with its length and waveform, the other person playing it with
+  byte ranges, nothing downloaded before play, speed, the slider, one at a time, the microphone off after every path, too
+  short, delete, a blocked microphone, axe on the bar, the preview and the bubble, and a 390 px phone).
+- Mutation checks: running; the result follows in the next commit.
+
+### Real problems found while building 6A (all fixed)
+
+1. The browser asked for a recording link that had just been revoked (a console error found in the real browser): the
+   preview's link was revoked while the preview player was still on the page, and the player set its address before
+   `preload="none"`. The link is now revoked once the player is gone, and `preload` comes first.
+
+### Backend notes found in 6A
+
+- Laravel's `Storage::response()` does not answer byte ranges; fixed for the local disk (above). On S3 the file would
+  still be streamed whole: a signed S3 URL, or ranges in the stream, would be needed there.
+- A recording's MP4 from Chrome holds Opus, not AAC (Chrome cannot record AAC); see the note above.
+
+### 6B · Calls backend
+
+- [ ] Not started (waits for the review of 6A).
+
+### 6C · Calls in the app
+
+- [ ] Not started (waits for the review of 6B).

@@ -4,12 +4,11 @@ The web app for Kanyaw Connect: private chat, community feed and video meetings 
 single-page app (Vue 3) that talks to the Laravel API in the parent folder. Build progress is tracked in
 [`PROGRESS.md`](PROGRESS.md); the API it follows is [`../docs/API.md`](../docs/API.md).
 
-> **Status:** all five phases of the build are done: sign in and register, the responsive shell, profile with photo,
-> presence, private chats in real time (direct and group, replies, pictures and files, edit and delete, typing, unread
-> counts, chat drawer), a feed of sample posts (likes, comments, share, new posts), the Create dialog, the "People &
-> activity" sidebar, video meetings (the Meetings page, pre-join, the call with screen sharing, chat and host controls),
-> push notifications that open the right chat or meeting, and the Settings page. A sixth phase is planned: recording voice
-> messages, and one-to-one calls (see [`PROGRESS.md`](PROGRESS.md)).
+> **Status:** the five phases of the original build are done: sign in and register, the responsive shell, profile with
+> photo, presence, private chats in real time (direct and group, replies, pictures and files, edit and delete, typing,
+> unread counts, chat drawer), a feed of sample posts, the Create dialog, the "People & activity" sidebar, video
+> meetings, push notifications that open the right chat or meeting, and the Settings page. Phase 6 is under way: voice
+> messages (6A) are built; one-to-one calls (6B, 6C) come next (see [`PROGRESS.md`](PROGRESS.md)).
 
 ## Run it
 
@@ -74,7 +73,7 @@ src/
                 rows and lists, the New meeting form), call/ (pre-join, the call screen: video grid, tiles, toolbar,
                 participants and chat panel, end screens), common/ (buttons, inputs, select, switch, dialog, avatar, states)
   composables/  logic shared between components (heartbeat, messaging session, open conversation, people, infinite scroll,
-                the camera and microphone preview)
+                the camera and microphone preview, recording a voice message)
   push/         notifications: browser.ts (the one place that talks to the service worker, the push subscription and
                 the notification permission) and links.ts (a tapped notification opens its chat or meeting)
   i18n/         en.json (complete), my.json and ksw.json (same keys, to be translated)
@@ -84,7 +83,7 @@ src/
                 development-only call layout preview
   router/       routes, sign-in guards, and pageLoad.ts (a page whose code cannot be downloaded after an app update)
   services/     what the feed needs from a server (an interface); which implementation is used is set by VITE_FEED_SOURCE
-  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime, feed, rooms, call, push
+  stores/       Pinia: auth, ui, chats, messages, presence, typing, drafts, realtime, feed, rooms, call, push, voicePlayback
   types/        types that mirror the objects in docs/API.md
   utils/        small helpers: merging messages, dates and time zones, links in text, message rules, image shrinking,
                 redirects, focus trap, the call grid, what a refused join means
@@ -145,6 +144,28 @@ large (about 140 KB compressed), so it is loaded only when a meeting is opened, 
 - Development only: `/rooms/<anything>?demo=6` shows the call screen with six sample people, to check the layout on one
   device. Production builds do not contain it.
 
+## Voice messages
+
+With the message box empty, the send button is a microphone. Tap it to record, then **Stop and listen** to hear the
+recording before sending, **Send**, or the bin to delete it. Recording is tap-based (not hold-to-record), so it works
+with one thumb, a keyboard and a screen reader.
+
+- **Cheap on mobile data:** mono at 32 kbps (about 4 KB a second), and a voice message is not downloaded until someone
+  presses play; the bubble shows its length and waveform before that (sent with the message, as display hints).
+- **Formats:** the first the browser's recorder supports of MP4/AAC, MP4, WebM/Opus and Ogg/Opus. Chrome and Android
+  record MP4 with Opus inside (Chrome cannot record AAC); Safari records MP4/AAC. The server stores audio-only WebM and
+  MP4 as audio when the upload says it is audio (content detection alone calls them video). A file a device cannot play
+  shows a short message and a download link.
+- **Limits:** at least 1 second, at most 5 minutes (recording stops there and keeps what it has).
+- **Privacy:** the microphone is turned off the moment recording stops or is deleted, and when you leave the chat, so
+  the browser's recording sign never stays on.
+- **Interruptions:** if the microphone stops (the permission is taken back, the browser stops it in a hidden tab), what
+  was recorded is kept for listening.
+- **Playing:** one voice message at a time across the app; the waveform is a slider (drag, or arrow keys for 5 seconds);
+  1×, 1.5× and 2× speed. Recordings are served with byte ranges, which Safari needs and every browser uses to seek.
+- Where the browser has no MediaRecorder or no microphone, there is no microphone button; an audio file can still be sent
+  with the attach button.
+
 ## Notifications
 
 When the app is closed, new messages and meeting invitations arrive as notifications (web push). Each person turns them
@@ -194,7 +215,7 @@ These parts of the product have no backend yet, or are not built yet:
 | Feed, posts, likes, comments, shares | The backend has no endpoints. Built with sample data behind `src/services/feed.ts` (`VITE_FEED_SOURCE=mock`). The 30 sample posts are by invented people, with pictures from `picsum.photos`; what a person adds (posts, comments, likes) stays in their own browser (`localStorage`) and is not seen by anyone else. The feed says so in a note at the top |
 | Writing a post | Mock: the picture is shrunk to a small copy and kept in the browser; nothing is sent anywhere |
 | Sharing a post | The link (`/?post=<id>`) opens the feed: there is no page for one post |
-| Chats and messages | Connected (Phase 2). Not built: recording voice messages (planned for Phase 6: an audio file sent with the attach button already becomes a voice message), "seen by", encrypted chats (read-only notice) |
+| Chats and messages | Connected (Phase 2; voice messages Phase 6A). Not built: "seen by", encrypted chats (read-only notice) |
 | Meetings and video | Connected (Phase 4). The in-call chat goes over LiveKit (the API has no endpoint for it) and is not saved: it is gone when the meeting ends, and the chat says so. No recording. Not built: calling one person directly with ringing (planned for Phase 6; today, start a meeting and share it) |
 | Push notifications | Connected (Phase 5). The text is the server's, in English |
 | "Forgot password", changing the password, email verification | The backend has no endpoints |
