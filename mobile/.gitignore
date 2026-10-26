@@ -10,6 +10,9 @@ web-build/
 expo-env.d.ts
 
 # Native
+# Firebase's per-project files (see app.config.ts)
+google-services.json
+GoogleService-Info.plist
 .kotlin/
 *.orig.*
 *.jks

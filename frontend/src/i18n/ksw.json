@@ -164,6 +164,13 @@
       "homeScreen": "On iPhone and iPad, notifications work once Kanyaw Connect is on your Home Screen: tap Share, then “Add to Home Screen”, open it from there and come back to Settings.",
       "browserFailed": "This browser could not turn on notifications. Please try again later."
     },
+    "phonePush": {
+      "label": "Notifications on this phone",
+      "hint": "New messages and missed calls, even when Kanyaw Connect is closed.",
+      "blocked": "Notifications are turned off for Kanyaw Connect in your phone's settings. To get them, turn them on there, then come back.",
+      "openSettings": "Open phone settings",
+      "failed": "This phone could not turn on notifications. Please try again later."
+    },
     "meetings": "Meetings",
     "dataSaver": "Data saver: turn off incoming video",
     "dataSaverHint": "In meetings, other people's cameras stay off to save mobile data. Screen shares still show. You can also change it during a meeting.",

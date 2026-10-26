@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 
 /**
@@ -5,6 +7,14 @@ import type { ConfigContext, ExpoConfig } from 'expo/config'
  * VoIP push topic (8B) and every native setting derive from it.
  */
 export const BUNDLE_ID = 'org.example.kanyawconnect'
+
+/**
+ * Firebase's file for the Android app (Firebase console > Project settings > Your apps). It holds no secret, but it
+ * names the Firebase project, so it is kept out of git: put it next to this file, or point GOOGLE_SERVICES_JSON at it
+ * (an EAS "file" environment variable for cloud builds). Without it the app builds, but cannot get a push token.
+ */
+const GOOGLE_SERVICES_JSON =
+  process.env.GOOGLE_SERVICES_JSON ?? (existsSync('./google-services.json') ? './google-services.json' : undefined)
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -28,6 +38,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: BUNDLE_ID,
+    googleServicesFile: GOOGLE_SERVICES_JSON,
     adaptiveIcon: {
       backgroundColor: '#1D4E89',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -44,6 +55,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-router',
     ['expo-splash-screen', { backgroundColor: '#1D4E89', image: './assets/images/splash-icon.png', imageWidth: 76 }],
     'expo-secure-store',
+    // Push notifications. The server sends message notifications on the `messages` channel (see push/phonePush).
+    ['expo-notifications', { color: '#1D4E89', defaultChannel: 'messages' }],
     'expo-localization',
     [
       'expo-image-picker',

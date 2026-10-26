@@ -373,7 +373,15 @@ docker compose cp AuthKey_ABC123DEFG.p8 app:/app/storage/app/private/push/AuthKe
 docker compose restart app queue        # the queue worker sends the pushes
 ```
 
-A phone registers itself with `POST /push/native-tokens` after sign-in. Tokens the push services report as no longer valid are deleted by the server. Logs say only which platform answered what; they never contain a token or a message.
+**Try it.** Turn on *Notifications on this phone* in the app's Settings (the phone then registers itself with `POST /push/native-tokens`), then send it one test notification:
+
+```bash
+docker compose exec app php artisan push:test you@example.org    # without Docker: php artisan push:test you@example.org
+```
+
+It sends straight away (not through the queue) to every phone of that account and prints how FCM or APNs answered for each, without showing any token.
+
+A phone registers itself again at every app start. Tokens the push services report as no longer valid are deleted by the server. Logs say only which platform answered what; they never contain a token or a message.
 
 ## Deleting an account
 

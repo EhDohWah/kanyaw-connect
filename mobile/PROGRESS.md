@@ -8,7 +8,7 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 | Part | Status |
 |---|---|
 | 8A. Foundation | Built; reviewed by you on 26 Oct 2026, runs on a Redmi Note 11 (two device checks still to confirm, below) |
-| 8B. Backend: native push, call pushes, account deletion | Built and tested (1382 backend tests pass); waiting for your Firebase and Apple keys, then a real test push you approve |
+| 8B. Backend: native push, call pushes, account deletion | Built and tested; waiting for your Firebase set-up and a real test push you send with `push:test` |
 | 8C. Messaging and voice messages | Not started |
 | 8D. Meetings | Not started |
 | 8E. One-to-one calls (native ringing) | Not started |
@@ -211,7 +211,16 @@ All in the Laravel app at the root; nothing in `mobile/` yet (the app registers 
 - [x] **Docs:** docs/API.md (both endpoints, the token object, `DELETE /me`, `is_deleted`, section 6.4 on phone push,
   the phone transports and `call.ringing_over` in 8.2, rate limits), the Postman collection, the README (settings,
   "Phone push (FCM and APNs)", "Deleting an account", deployment checklist, troubleshooting) and `.env.example`.
-- [ ] **A real test push to your phone,** once you send the keys and approve it.
+- [x] **For the test push** (pulled forward from 8F, because a real push needs a phone that registered its token):
+  - the app: *Notifications on this phone* in Settings (permission asked only when it is switched on; the Android
+    channels `messages` and `missed-calls`; the token registered with the server, re-registered at every start and
+    when the system changes it, and tied to the person, so whoever signs in next on the phone does not inherit it);
+    `google-services.json` is read from `mobile/` or `GOOGLE_SERVICES_JSON` and kept out of git;
+  - the server: `php artisan push:test <email>`, which sends one notification right away to that account's phones and
+    prints each push service's answer (no tokens).
+  - *Still 8F:* localised channel names, the `calls` channel, opening the chat when a notification is tapped, the
+    explanation after sign-in.
+- [ ] **A real test push to your phone:** you run `push:test` once the Firebase files are in place.
 
 ### Found while building
 

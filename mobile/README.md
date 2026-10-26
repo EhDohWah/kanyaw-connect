@@ -29,6 +29,23 @@ Otherwise (any computer, phone on the same Wi-Fi):
 The `ios/` and `android/` folders are generated (`expo prebuild`) and never committed. Native changes go in
 `app.config.ts`, a config plugin under `plugins/`, or a local module under `modules/`.
 
+## Push notifications
+
+Turning on *Notifications on this phone* in Settings asks for permission (only then), creates the Android channels
+`messages` and `missed-calls`, and registers the phone's FCM or APNs token with the server. The app re-registers at
+every start while it stays on. Tapping a notification, the `calls` channel and the PushKit (VoIP) token come later (8E,
+8F).
+
+- **Android** needs Firebase's `google-services.json` for the app (Firebase console → Project settings → Your apps).
+  Put it in this folder (git ignores it), or point `GOOGLE_SERVICES_JSON` at it, then build the development app
+  again. Without it the app works but cannot get a push token. The server needs the matching service-account key:
+  see "Phone push (FCM and APNs)" in the [main README](../README.md#phone-push-fcm-and-apns).
+- **iOS** needs an Apple Developer Program membership and the APNs key on the server.
+- Check the whole chain with `php artisan push:test <your email>` on the server.
+
+No secret goes into this folder: `google-services.json` names the Firebase project but is not a key. The
+service-account key and the `.p8` key live on the server only.
+
 ## Scripts
 
 | Command | What it does |
