@@ -1,4 +1,5 @@
 import { Image } from 'expo-image'
+import { useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 
 import { AppText } from '@/components/common/AppText'
@@ -15,12 +16,28 @@ export interface AvatarProps {
   size?: keyof typeof SIZES
 }
 
-/** A photo, or coloured initials when there is none (as on the web). Decorative: the name is always shown beside it. */
+/**
+ * A photo, or coloured initials when there is none or it cannot be loaded (as on the web). Decorative: the name is
+ * always shown beside it.
+ */
 export function Avatar({ name, seed, src, size = 'md' }: AvatarProps) {
   const edge = SIZES[size]
   const frame = { width: edge, height: edge, borderRadius: edge / 2 }
-  if (src) {
-    return <Image source={src} style={frame} contentFit="cover" cachePolicy="memory-disk" accessible={false} />
+  // The photo that failed, so a new one (a changed photo) is tried again.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+
+  if (src && src !== failedSrc) {
+    return (
+      <Image
+        source={src}
+        style={frame}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        accessible={false}
+        testID="avatar-photo"
+        onError={() => setFailedSrc(src)}
+      />
+    )
   }
   return (
     <View

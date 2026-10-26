@@ -7,7 +7,7 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 
 | Part | Status |
 |---|---|
-| 8A. Foundation | Built; waiting for your review and the device check below |
+| 8A. Foundation | Built; reviewed by you on 26 Oct 2026, runs on a Redmi Note 11 (two device checks still to confirm, below) |
 | 8B. Backend: native push, call pushes, account deletion | Not started |
 | 8C. Messaging and voice messages | Not started |
 | 8D. Meetings | Not started |
@@ -157,5 +157,12 @@ the Expo account.
 | Check | Phone | OS | Date | Result |
 |---|---|---|---|---|
 | Build, install and open the development app | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Works over USB (`adb reverse`) |
-| Sign in | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Sign-in screen shown; crashed right after signing in (the `pusher-js` import, fixed above). To check again |
-| Chat list, kill and reopen, sign out | | | | Waiting for the check with the fix |
+| Sign in | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Works (as user2, after the `pusher-js` fix) |
+| Chat list | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Works: 2 chats, previews, times, unread badge 3 on the tab |
+| Tabs, Create sheet, opening a chat, Settings | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Work as built (placeholders where 8C/8D come later) |
+| Kill and reopen (token kept), sign out | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Not shown in the screenshots; to confirm |
+| Burmese and S'gaw Karen text | | | | Not checked yet |
+
+Seen on the phone: one person's photo did not load and the row showed an empty circle. The avatar now falls back to the
+initials when a photo fails, as on the web (with a test). The photo addresses come from the backend's `APP_URL`; on a
+phone they must use an address the phone can reach (`http://127.0.0.1:8000` over USB with `adb reverse`).
