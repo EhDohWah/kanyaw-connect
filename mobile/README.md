@@ -9,6 +9,12 @@ have.
 
 ## Running it on a phone
 
+**On Windows with an Android phone on USB**, follow [docs/android-on-windows.md](docs/android-on-windows.md): the
+one-time setup (long paths, memory, Java, Android SDK, ninja, Xiaomi settings), the two-window daily routine, and a fix for
+every error we met.
+
+Otherwise (any computer, phone on the same Wi-Fi):
+
 1. **Backend.** Start it so a phone can reach it: see "Using it from another device" in the [main README](../README.md).
    A phone cannot reach `localhost` on your computer, so everything uses your computer's address on the local network.
 2. **Settings.** `cp .env.example .env` and put that address (for example `192.168.1.20`) in `EXPO_PUBLIC_API_BASE_URL`

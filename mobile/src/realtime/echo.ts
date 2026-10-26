@@ -2,9 +2,15 @@
 import Echo, { type ConnectionStatus } from 'laravel-echo'
 // The React Native build of pusher-js (it watches the network with NetInfo). Its README marks React Native support as
 // deprecated in favour of a native SDK; it still works with Reverb, and PROGRESS.md records the risk.
-import Pusher from 'pusher-js/react-native'
+import * as pusherReactNative from 'pusher-js/react-native'
 
 import { config } from '@/config'
+
+/**
+ * The Pusher class. The React Native build is CommonJS and exports `{ Pusher }`, although its types declare a default
+ * export: a default import gives the wrapper object, and Echo then fails with "Object cannot be used as a constructor".
+ */
+export const PusherClient = (pusherReactNative as unknown as { Pusher: typeof pusherReactNative.default }).Pusher
 
 export type { ConnectionStatus }
 
@@ -48,7 +54,7 @@ export function createEcho(token: string): EchoLike {
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${config.apiBaseUrl}/broadcasting/auth`,
     auth: { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
-    Pusher,
+    Pusher: PusherClient,
     withoutInterceptors: true,
   })
 

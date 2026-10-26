@@ -27,6 +27,8 @@ export default function TabsLayout() {
   return (
     <>
       <Tabs
+        // Android's back button returns to Home from another tab, then leaves the app.
+        backBehavior="initialRoute"
         screenOptions={{
           headerTintColor: header.headerTintColor,
           headerTitleStyle: header.headerTitleStyle,

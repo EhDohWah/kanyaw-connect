@@ -130,6 +130,12 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 - *Backend test fix:* `CallActionsTest` "refuses a link that was changed" set the signature's first character to `0`, so
   1 time in 16 the link was unchanged and (rightly) accepted. It now always changes the character. Found when the
   backend suite failed once during the 8A checks; 1292 of 1292 pass.
+- *Found on the phone (26 October 2026):* signing in crashed with "Object cannot be used as a constructor". The React
+  Native build of `pusher-js` is CommonJS and exports `{ Pusher }`, although its types declare a default export, so the
+  default import handed Echo the wrapper object. `src/realtime/echo.ts` now takes `.Pusher`, and a test checks that Echo
+  gets a class. The shell tests replace the Echo factory with a fake, which is why they did not catch it.
+- *Tabs and the back button:* the tab bar now uses `backBehavior="initialRoute"`: Android's back button returns to Home
+  from another tab, then leaves the app. (Expo Router warned that the `index` anchor needs it.)
 - *Testing Library 14:* `fireEvent` returns a promise and must be awaited; un-awaited events overlapped and lost typing.
 
 ### Device check (you)
@@ -144,10 +150,12 @@ Done when a development build, on a physical phone and against the local backend
 Also worth a look on the same phone: Burmese and S'gaw Karen text (Profile → Language), the offline banner (turn on
 airplane mode), and a `kanyawconnect://chats/<id>` link (`npx uri-scheme open kanyawconnect://chats/<id> --android`).
 
-How to run it: `cp .env.example .env` and put your computer's LAN address in it, start the backend as its README describes
-for phones, then build once with `eas build --profile development` (or `npx expo run:android` with Android Studio) and
-start the bundler with `npm start`. This needs the Expo account (prerequisite for 8A).
+How to run it: [docs/android-on-windows.md](docs/android-on-windows.md) (Windows PC, Android phone on USB, the setup we
+used, with every problem we hit and its fix). An EAS cloud build (`eas build --profile development`) also works and needs
+the Expo account.
 
 | Check | Phone | OS | Date | Result |
 |---|---|---|---|---|
-| Sign in, chat list, kill and reopen, sign out | | | | |
+| Build, install and open the development app | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Works over USB (`adb reverse`) |
+| Sign in | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Sign-in screen shown; crashed right after signing in (the `pusher-js` import, fixed above). To check again |
+| Chat list, kill and reopen, sign out | | | | Waiting for the check with the fix |
