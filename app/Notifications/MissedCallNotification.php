@@ -3,17 +3,24 @@
 namespace App\Notifications;
 
 use App\Models\Call;
-use App\Notifications\Channels\WebPushChannel;
+use App\Models\NativePushToken;
+use App\Notifications\Concerns\BuildsNativePush;
+use App\Notifications\Concerns\ChoosesPushChannels;
+use App\Notifications\Contracts\NativePushMessage;
 use App\Notifications\Contracts\WebPushMessage;
+use App\Services\NativePush\NativePushSender;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Str;
 
-/** "Missed call from X", pushed to the callee like a new message (see NotifyCallParties::missed). */
-class MissedCallNotification extends Notification implements ShouldQueue, WebPushMessage
+/**
+ * "Missed call from X", pushed to the callee like a new message (see NotifyCallParties::missed). On a
+ * phone it is an ordinary notification (Android channel `missed-calls`, an APNs alert), never a VoIP push.
+ */
+class MissedCallNotification extends Notification implements NativePushMessage, ShouldQueue, WebPushMessage
 {
-    use Queueable;
+    use BuildsNativePush, ChoosesPushChannels, Queueable;
 
     /**
      * @param  array<string, mixed>  $payload
@@ -38,7 +45,19 @@ class MissedCallNotification extends Notification implements ShouldQueue, WebPus
      */
     public function via(object $notifiable): array
     {
-        return [WebPushChannel::class];
+        return $this->pushChannels($notifiable);
+    }
+
+    public function toNativePush(NativePushToken $registration, NativePushSender $sender): array
+    {
+        $data = array_diff_key($this->payload, ['title' => true, 'body' => true]);
+
+        return $this->nativeAlert($registration, $sender, $this->payload['title'], $this->payload['body'], $data, 'missed-calls', config('push.ttl_seconds'), $this->payload['chat_id']);
+    }
+
+    public function retryNativePush(): bool
+    {
+        return true;
     }
 
     /**

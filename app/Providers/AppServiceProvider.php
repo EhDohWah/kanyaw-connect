@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Services\LiveKitService;
+use App\Services\NativePush\HttpNativePushSender;
+use App\Services\NativePush\NativePushSender;
 use App\Services\WebPushService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -28,6 +30,13 @@ class AppServiceProvider extends ServiceProvider
             config('push.urgency'),
             config('push.timeout_seconds'),
         ));
+
+        // The key files may be given relative to the project, e.g. storage/app/private/push/firebase.json.
+        $this->app->singleton(NativePushSender::class, fn () => new HttpNativePushSender(
+            ['credentials' => $this->projectPath(config('push.native.fcm.credentials'))] + config('push.native.fcm'),
+            ['key_path' => $this->projectPath(config('push.native.apns.key_path'))] + config('push.native.apns'),
+            config('push.native.timeout_seconds'),
+        ));
     }
 
     /**
@@ -39,6 +48,11 @@ class AppServiceProvider extends ServiceProvider
 
         $this->trustProxies();
         $this->configureRateLimiting();
+    }
+
+    private function projectPath(?string $path): ?string
+    {
+        return blank($path) || str_starts_with($path, '/') ? $path : base_path($path);
     }
 
     /**
@@ -98,6 +112,7 @@ class AppServiceProvider extends ServiceProvider
 
         // A browser subscribes once; this only stops a script from filling the table.
         RateLimiter::for('push-subscriptions', fn (Request $request) => Limit::perHour(30)->by($request->user()?->id ?: $request->ip()));
+        RateLimiter::for('native-push-tokens', fn (Request $request) => Limit::perHour(20)->by($request->user()?->id ?: $request->ip()));
 
         // Every key-bundle fetch uses up one-time prekeys, so it is limited per requester per target
         // to stop anyone draining a person's prekeys. Runs before route-model binding: the user is an id.

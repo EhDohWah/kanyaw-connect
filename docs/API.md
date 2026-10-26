@@ -129,7 +129,7 @@ Limits are per signed-in user unless stated. A request over the limit gets `429`
 | `POST /auth/login` | 5 / minute per email + IP address |
 | `POST /auth/register` | 20 / hour per IP address |
 | `POST /auth/forgot-password`, `POST /auth/reset-password` | 5 / minute per IP address, together (and at most one reset email a minute per address) |
-| `PUT /me/password` | 5 / minute |
+| `PUT /me/password`, `DELETE /me` | 5 / minute, together |
 | `POST /auth/email/verification-notification` | 6 / hour |
 | `POST /auth/email/verify/{id}/{hash}` | 20 / minute per IP address |
 | `POST /chats/{chat}/messages` | 30 / minute |
@@ -140,6 +140,7 @@ Limits are per signed-in user unless stated. A request over the limit gets `429`
 | `POST /devices` | 20 / hour |
 | `GET /users/{user}/key-bundles` | 10 / minute per target user |
 | `POST /push/subscriptions` | 30 / hour |
+| `POST /push/native-tokens` | 20 / hour |
 
 ### 1.8 Browser access (CORS) and security headers
 
@@ -203,6 +204,8 @@ How *other* people appear (chat members, senders, room hosts). Never has an emai
   "avatar_thumb_url": null
 }
 ```
+
+A deleted account (see [`DELETE /me`](#delete-me)) still appears where other people need it (as the sender of its old messages, in direct chats and in call history), named **"Deleted user"**, without a picture, and with one extra field, `"is_deleted": true`. Show it as such (localised) and offer no way to message or call it.
 
 ### Chat
 
@@ -399,6 +402,27 @@ What you need to start an encrypted session with one device of another person.
   "created_at": "2026-03-14T09:08:26.304038Z"
 }
 ```
+
+### Native push token
+
+A phone app registered for push (see [section 6.4](#64-phones-native-push)). The tokens themselves are never returned.
+
+```json
+{
+  "id": "0195e2c4-0040-7a3f-813f-5f3a9c07a5b0",
+  "platform": "ios",
+  "has_voip_token": true,
+  "app_version": "1.0.0",
+  "last_seen_at": "2026-03-14T09:20:11.482913Z",
+  "created_at": "2026-03-14T09:20:11.483152Z"
+}
+```
+
+| Field | Notes |
+|---|---|
+| `platform` | `android` or `ios` |
+| `has_voip_token` | iOS only: whether a PushKit token is registered, which is what lets a closed app ring for a call |
+| `last_seen_at` | When the app last registered (it does so at every start) |
 
 ### Room
 
@@ -815,6 +839,35 @@ Change the password, knowing the current one. **This device stays signed in; eve
 ```
 
 **Errors:** `422` with `errors.current_password` ("The current password is incorrect.") or `errors.password` ("The new password must be different from the current one.", too short, not confirmed); nothing changes. `429` after 5 tries in a minute.
+
+### DELETE /me
+
+Delete your account for good, confirming with your password. The app stores require this for any app where people can sign up.
+
+| Field | Type | Rules |
+|---|---|---|
+| `password` | string | required, the current password |
+
+**What goes:** every session (all devices are signed out at once), web push subscriptions and registered phones, encryption devices and their keys (contacts get [`device.revoked`](#devicerevoked)), the profile (name, email, phone, settings) and the avatar, membership of every group (ownership passes on as when leaving; a group left empty is deleted), and every file the account uploaded (its messages' attachments then read `null`). A call that is ringing or in progress ends as if you hung up, and video rooms you host end. Pending password reset links stop working.
+
+**What stays:** messages you sent stay in other people's chats, and calls in their history, from a **"Deleted user"** (see [PublicUser](#publicuser)). In a direct chat the other person still sees the conversation, with "Deleted user"; calling it is refused (`403`).
+
+The account cannot sign in again, and the email address is free to register a new account. Nothing can be undone.
+
+**Response `204`.** **Errors:** `422` with `errors.password` and nothing changed:
+
+```json
+{
+  "message": "The password is incorrect.",
+  "errors": {
+    "password": [
+      "The password is incorrect."
+    ]
+  }
+}
+```
+
+`429` after 5 tries in a minute (shared with `PUT /me/password`).
 
 ### POST /me/heartbeat
 
@@ -2041,6 +2094,63 @@ Your subscriptions (one per browser), oldest first. **Response `200`:** `{ "data
 
 Stop notifications for one browser (call it when the user turns notifications off, after `subscription.unsubscribe()`). **Response `204`.** Someone else's subscription answers `404`.
 
+### POST /push/native-tokens
+
+Register this phone for push notifications (the phone app, not a browser). Call it after sign-in and at every app start: it is safe to repeat. Explained in [section 6.4](#64-phones-native-push). **Limit:** 20 per hour; at most 20 phones per user. Needs the bearer token from sign-in (`403` otherwise).
+
+| Field | Type | Rules |
+|---|---|---|
+| `platform` | string | required, `android` or `ios` |
+| `token` | string | required, the FCM registration token (Android) or the APNs device token in hex (iOS); max 4096 characters |
+| `voip_token` | string or null | iOS only: the PushKit (VoIP) token in hex, needed to ring for calls. Sending one for Android is refused. |
+| `app_version` | string or null | max 32 characters, e.g. `1.0.0` |
+
+```json
+{
+  "platform": "ios",
+  "token": "abababababababababababababababababababababababababababababababab",
+  "voip_token": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "app_version": "1.0.0"
+}
+```
+
+**Response `201`**, or **`200`** when this token was already registered (its details are refreshed; if another account registered it on the same phone, it moves to you). `{ "data": NativePushToken }`:
+
+```json
+{
+  "data": {
+    "id": "0195e2c4-0040-7a3f-813f-5f3a9c07a5b0",
+    "platform": "ios",
+    "has_voip_token": true,
+    "app_version": "1.0.0",
+    "last_seen_at": "2026-03-14T09:20:11.482913Z",
+    "created_at": "2026-03-14T09:20:11.483152Z"
+  }
+}
+```
+
+The registration is tied to the login it was made with: signing out, or the token expiring, removes it. A `voip_token` that another registration held moves to this one.
+
+**Errors:** `422` for a missing or too long field, a `voip_token` on Android, or more than 20 phones:
+
+```json
+{
+  "message": "The token field is required. (and 1 more error)",
+  "errors": {
+    "token": [
+      "The token field is required."
+    ],
+    "voip_token": [
+      "Only an iPhone has a VoIP (PushKit) token."
+    ]
+  }
+}
+```
+
+### DELETE /push/native-tokens/{token}
+
+Stop notifications on one phone (call it when the person turns notifications off in the app). `{token}` is the registration's `id`, not the push token. **Response `204`.** Someone else's registration answers `404`.
+
 ### 3.12 Real-time channel authorization
 
 ### POST /broadcasting/auth
@@ -2699,7 +2809,41 @@ self.addEventListener('notificationclick', (event) => {
 
 ### 6.3 Who is notified
 
-A new message notifies every other member of the chat who has at least one subscription, **except** people who muted the chat (`is_muted`, until `muted_until` if set), and people whose app is open (their heartbeat is alive: they already get the message over the WebSocket). Edits, deletions and read receipts never send a push. A notification not delivered within a day is dropped by the push service (the app shows the message when it is opened).
+A new message notifies every other member of the chat who has at least one browser subscription or registered phone, **except** people who muted the chat (`is_muted`, until `muted_until` if set), and people whose app is open (their heartbeat is alive: they already get the message over the WebSocket). Edits, deletions and read receipts never send a push. A notification not delivered within a day is dropped by the push service (the app shows the message when it is opened).
+
+### 6.4 Phones (native push)
+
+The phone app does not use web push: it gets notifications through Firebase Cloud Messaging (Android) and the Apple Push Notification service (iOS), which the server calls directly. The server needs credentials for each (see the README); a platform without them is skipped.
+
+1. After sign-in, get the push token (on iOS also the PushKit token) and `POST /push/native-tokens`. Do it again at every app start and whenever the system hands out a new token.
+2. To stop on this phone, `DELETE /push/native-tokens/{id}`. Signing out removes the registration anyway.
+3. A token FCM or APNs reports as no longer valid is removed by the server. A dead PushKit token is removed on its own: the phone keeps its other notifications.
+
+**Message notifications** follow exactly the rules of [section 6.3](#63-who-is-notified), with the same text as web push (["New message"](#62-what-a-notification-contains) in encrypted chats):
+
+- **Android:** an FCM *notification* message on the channel **`messages`**, high priority, kept by FCM for up to a day. The fields of [section 6.2](#62-what-a-notification-contains) other than `title` and `body` travel in `data`, **all as strings** (`"encrypted": "false"`).
+- **iOS:** an APNs **alert** (`apns-push-type: alert`, topic = the bundle identifier, priority 10, expiring after a day), `thread-id` = the chat id so iOS groups a chat's notifications. The same fields sit next to `aps`:
+
+```json
+{
+  "aps": {
+    "alert": {
+      "title": "Naw Paw Say",
+      "body": "Hello Eh Doh, are you coming on Saturday?"
+    },
+    "sound": "default",
+    "thread-id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd"
+  },
+  "type": "message.new",
+  "chat_id": "0195e2c4-0004-7a03-8103-5f3a9c005ccd",
+  "message_id": "0195e2c4-0008-7a07-8107-5f3a9c00d889",
+  "sent_at": "2026-03-14T09:02:18.628374Z",
+  "encrypted": false,
+  "message_type": "text"
+}
+```
+
+A notification that FCM or APNs could not take is tried again a few times. For calls see [section 8.2](#82-push-notifications-for-calls).
 
 ---
 
@@ -2830,6 +2974,28 @@ A call is a ringing [Call](#call) plus a two-seat room. The REST calls below mov
   "body": "Missed voice call"
 }
 ```
+
+**On phones** ([section 6.4](#64-phones-native-push)) the same rules apply, with these transports:
+
+| Push | Android (FCM) | iOS (APNs) |
+|---|---|---|
+| `call.incoming` | A high-priority **data** message (no notification: the app rings itself) whose TTL is the seconds left until `ring_expires_at`. `data` is the payload above, all values as strings. | A **VoIP push** to every PushKit token (`apns-push-type: voip`, topic `<bundle identifier>.voip`, priority 10, `apns-expiration` = `ring_expires_at`); the payload above. An iPhone without a PushKit token gets nothing. |
+| `call.ringing_over` | A high-priority data message | A VoIP push, as above |
+| `call.missed` | A notification on the channel **`missed-calls`** | An ordinary **alert** to the device token, never a VoIP push |
+
+A VoIP push is only ever sent for an incoming call or for the end of its ringing. Call pushes are never retried: a late ring is worse than none.
+
+**Ringing over** (phones only; a browser hears it over the WebSocket). When a ringing call stops ringing by any route, every phone of the callee gets:
+
+```json
+{
+  "type": "call.ringing_over",
+  "call_id": "0195e2c4-0030-7a2f-812f-5f3a9c05ade1",
+  "reason": "answered"
+}
+```
+
+`reason` is `answered` (on any device), `declined`, `cancelled` (the caller hung up) or `no_answer` (the ringing ran out, including when the server's timeout ends it). Stop ringing for `call_id`; if this phone answered it, ignore it. It is kept by the push services for at least 30 seconds, or until `ring_expires_at` if that is later.
 
 ---
 

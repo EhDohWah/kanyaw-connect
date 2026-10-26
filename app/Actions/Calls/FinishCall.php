@@ -20,7 +20,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * Moves a call to its final status (declined, missed or ended), exactly once, and does what follows:
  * closes its room, tells both people (call.declined / call.missed / call.ended), posts the summary
- * message in the chat and, for a missed call, pushes "Missed call" to the callee.
+ * message in the chat, tells the callee's phones to stop ringing if it was still ringing, and, for a
+ * missed call, pushes "Missed call" to the callee.
  *
  * Every way a call can stop goes through here: the two people, the ringing timeout, the LiveKit
  * webhook, the reconnect grace and the stale cleanup. They can race; the lock on the call row
@@ -49,8 +50,9 @@ class FinishCall
     public function handle(Call $call, CallStatus $status, ?CallEndReason $reason, array $from): bool
     {
         $summary = null;
+        $wasRinging = false;
 
-        $finished = DB::transaction(function () use ($call, $status, $reason, $from, &$summary) {
+        $finished = DB::transaction(function () use ($call, $status, $reason, $from, &$summary, &$wasRinging) {
             $locked = Call::whereKey($call->getKey())->lockForUpdate()->firstOrFail();
 
             if (! in_array($locked->status, $from, true)) {
@@ -58,6 +60,8 @@ class FinishCall
 
                 return false;
             }
+
+            $wasRinging = $locked->status === CallStatus::Ringing;
 
             if ($locked->status === CallStatus::Ringing && $locked->ringExpired()) {
                 [$status, $reason] = [CallStatus::Missed, CallEndReason::NoAnswer];
@@ -78,6 +82,10 @@ class FinishCall
         $this->closeRoom($call);
         $this->broadcaster->finished($call);
         $this->chatBroadcaster->messageSent($summary);
+
+        if ($wasRinging) {
+            $this->notifier->ringingOver($call);
+        }
 
         if ($call->status === CallStatus::Missed) {
             $this->notifier->missed($call);

@@ -4,8 +4,12 @@ namespace App\Notifications;
 
 use App\Enums\CallStatus;
 use App\Models\Call;
-use App\Notifications\Channels\WebPushChannel;
+use App\Models\NativePushToken;
+use App\Notifications\Concerns\BuildsNativePush;
+use App\Notifications\Concerns\ChoosesPushChannels;
+use App\Notifications\Contracts\NativePushMessage;
 use App\Notifications\Contracts\WebPushMessage;
+use App\Services\NativePush\NativePushSender;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,15 +18,16 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 /**
- * "X is calling", pushed to every browser of the callee so a phone with the app closed can ring.
+ * "X is calling", pushed to every browser and every phone of the callee so a phone with the app closed
+ * can ring: a VoIP push (PushKit) on iOS, a high-priority FCM data message on Android.
  *
  * It lives only as long as the ringing: the push service drops it at ring_expires_at (TTL), it is
  * not retried, and it is not sent at all if the call stopped ringing while it waited in the queue.
  * The payload carries a signed decline URL because the service worker has no bearer token.
  */
-class IncomingCallNotification extends Notification implements ShouldQueue, WebPushMessage
+class IncomingCallNotification extends Notification implements NativePushMessage, ShouldQueue, WebPushMessage
 {
-    use Queueable;
+    use BuildsNativePush, ChoosesPushChannels, Queueable;
 
     /**
      * @param  array<string, mixed>  $payload
@@ -53,7 +58,18 @@ class IncomingCallNotification extends Notification implements ShouldQueue, WebP
      */
     public function via(object $notifiable): array
     {
-        return [WebPushChannel::class];
+        return $this->pushChannels($notifiable);
+    }
+
+    public function toNativePush(NativePushToken $registration, NativePushSender $sender): array
+    {
+        return $this->nativeCallPush($registration, $sender, $this->payload, CarbonImmutable::parse($this->payload['ring_expires_at'])->getTimestamp());
+    }
+
+    /** A late "X is calling" is worse than none. */
+    public function retryNativePush(): bool
+    {
+        return false;
     }
 
     /** Checked when the queue worker gets to it: a call that was answered, ended or ran out is not pushed. */

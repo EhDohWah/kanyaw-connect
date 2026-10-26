@@ -47,7 +47,7 @@ class Message extends Model
 
     public function sender(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'sender_id');
+        return $this->belongsTo(User::class, 'sender_id')->withTrashed(); // a deleted account shows as "Deleted user"
     }
 
     /** The message this one replies to. Includes deleted ones so a reply can show "message deleted". */

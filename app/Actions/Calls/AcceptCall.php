@@ -2,6 +2,7 @@
 
 namespace App\Actions\Calls;
 
+use App\Actions\Push\NotifyCallParties;
 use App\Enums\CallEndReason;
 use App\Enums\CallStatus;
 use App\Exceptions\CallConflictException;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class AcceptCall
 {
-    public function __construct(private FinishCall $finish, private CallBroadcaster $broadcaster) {}
+    public function __construct(private FinishCall $finish, private CallBroadcaster $broadcaster, private NotifyCallParties $notifier) {}
 
     /**
      * The callee answers: ringing → ongoing. Accepting a call that is already ongoing (answered on
@@ -37,6 +38,8 @@ class AcceptCall
 
         if ($accepted) {
             $this->broadcaster->accepted($call);
+            // Answered on one device: the callee's other phones stop ringing.
+            $this->notifier->ringingOver($call);
 
             return $call;
         }

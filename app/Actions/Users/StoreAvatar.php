@@ -12,7 +12,7 @@ use Intervention\Image\ImageManager;
 
 class StoreAvatar
 {
-    private const DISK = 'public';
+    public const DISK = 'public';
 
     private const THUMBNAIL_SIZE = 256;
 

@@ -34,7 +34,7 @@ it('does not leak internals in error responses', function (string $method, strin
     'forbidden (chat you are not in)' => fn () => ['GET', '/api/v1/chats/'.makeGroup(User::factory()->create())->id, 403],
     'not found (unknown route)' => ['GET', '/api/v1/nope', 404],
     'not found (unknown message)' => ['GET', '/api/v1/messages/'.Str::uuid(), 404],
-    'method not allowed' => ['DELETE', '/api/v1/me', 405],
+    'method not allowed' => ['PUT', '/api/v1/me', 405],
     'validation error' => ['POST', '/api/v1/chats/direct', 422],
     'server error' => ['GET', '/api/v1/__boom', 500],
 ]);

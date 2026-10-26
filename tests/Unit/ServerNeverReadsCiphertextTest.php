@@ -71,12 +71,14 @@ it('only uses libsodium to verify a public signature', function () {
 });
 
 it('never holds a private key of a user', function () {
-    // The one private key the server does own is its own VAPID key, which signs the web-push requests it
-    // sends to browsers' push services. It is not a user's key and protects no message content, and it
-    // may appear only in the two files that generate and use it.
+    // The private keys the server does own are its own push credentials: the VAPID key, which signs the
+    // web-push requests it sends to browsers' push services, and the Firebase service-account and APNs
+    // keys, which sign its requests to FCM and APNs. None is a user's key or protects message content,
+    // and they may appear only in the files that generate and use them.
     $vapid = [
         'app/Services/WebPushService.php',
         'app/Console/Commands/GenerateVapidKeys.php',
+        'app/Services/NativePush/HttpNativePushSender.php',
     ];
 
     $found = [];

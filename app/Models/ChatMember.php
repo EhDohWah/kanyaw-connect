@@ -74,7 +74,7 @@ class ChatMember extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed(); // a deleted account stays in its direct chats as "Deleted user"
     }
 
     public function lastReadMessage(): BelongsTo

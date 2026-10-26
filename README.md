@@ -12,11 +12,11 @@ This repository holds the API (the Laravel app in the root folder) and the web f
 | Authentication | Laravel Sanctum bearer tokens (30 days) |
 | WebSockets | Laravel Reverb |
 | Video | LiveKit (self-hosted), via `agence104/livekit-server-sdk` |
-| Push notifications | Web Push (VAPID), via `minishlink/web-push` |
+| Push notifications | Web Push (VAPID), via `minishlink/web-push`; phones through FCM HTTP v1 and APNs over HTTP/2, called directly (`firebase/php-jwt` signs the requests) |
 | Web server | FrankenPHP (Caddy with PHP built in) |
 | Tests, style | Pest, Laravel Pint |
 
-**What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · one-to-one voice and video calls that ring, with missed-call notices · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · web push notifications · a room audit log · scheduled clean-up.
+**What it does:** accounts and profiles · one-to-one and group chats with roles · text, image, voice and file messages with replies, edits and deletes · read positions and unread counts · online presence and typing indicators · real-time delivery · video rooms with passwords, waiting rooms, locking, co-hosts, muting and removal · one-to-one voice and video calls that ring, with missed-call notices · end-to-end encrypted chats (server side: a key directory and ciphertext relay) · push notifications to browsers and to the phone app (with VoIP pushes that ring for calls) · in-app account deletion · a room audit log · scheduled clean-up.
 
 ## Contents
 
@@ -30,6 +30,8 @@ This repository holds the API (the Laravel app in the root folder) and the web f
 - [Scheduled jobs](#scheduled-jobs)
 - [LiveKit and TURN](#livekit-and-turn)
 - [Web push](#web-push)
+- [Phone push (FCM and APNs)](#phone-push-fcm-and-apns)
+- [Deleting an account](#deleting-an-account)
 - [End-to-end encryption](#end-to-end-encryption)
 - [Security](#security)
 - [Tests and code style](#tests-and-code-style)
@@ -271,6 +273,19 @@ The API sends three emails: "verify your email address" (after registering, or w
 | `PUSH_ALLOWED_HOSTS` | Google, Mozilla, Apple, Windows push services | Which push-service hosts a client may register (comma separated, `*.example.com` wildcards). Replaces the built-in list. |
 | `PUSH_REQUIRE_HTTPS` | `true` | Only turn off to test against a plain-http fake push service. |
 
+### Phone push
+
+Each platform stays off until its settings are filled in; see [Phone push (FCM and APNs)](#phone-push-fcm-and-apns). File paths may be absolute or relative to the project.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `FCM_CREDENTIALS` | empty | Path of the Firebase service-account JSON file, e.g. `storage/app/private/push/firebase.json`. Android push stays off while it is empty or unreadable. |
+| `FCM_PROJECT_ID` | the `project_id` in that file | Only needed to send to another Firebase project than the key's own. |
+| `APNS_KEY_PATH` | empty | Path of the APNs auth key (`AuthKey_XXXXXXXXXX.p8`), e.g. `storage/app/private/push/AuthKey.p8`. |
+| `APNS_KEY_ID`, `APNS_TEAM_ID` | empty | The key's 10-character Key ID and your Apple Developer Team ID. iOS push stays off until these and the key are set. |
+| `APNS_BUNDLE_ID` | `org.example.kanyawconnect` | The app's bundle identifier: the topic of alerts, and `<bundle>.voip` for call pushes. Must match the app in `mobile/app.config.ts`. |
+| `APNS_PRODUCTION` | `false` | `false` sends to Apple's sandbox (development builds); `true` to production (TestFlight and App Store builds). A token from one is refused by the other. |
+
 ### Encryption and housekeeping
 
 | Variable | Default | Meaning |
@@ -341,6 +356,28 @@ docker compose exec app php artisan push:vapid     # prints VAPID_PUBLIC_KEY / V
 ```
 
 Create the pair once and keep it: replacing it signs every browser out of push. Notifications are encrypted for the browser (the push service cannot read them) and only ever contain "New message" for encrypted chats. The server only talks to the well-known push services; a client cannot make it call an arbitrary address (see `PUSH_ALLOWED_HOSTS`).
+
+## Phone push (FCM and APNs)
+
+The phone app (in `mobile/`) gets its notifications from Firebase Cloud Messaging on Android and the Apple Push Notification service on iOS. The server calls both directly over HTTPS (HTTP/2 for Apple; the Docker image's curl supports it). Like web push, it needs the queue worker. What is sent, and when, is in section 6.4 of [docs/API.md](docs/API.md#64-phones-native-push).
+
+**Android (FCM).** In the [Firebase console](https://console.firebase.google.com/), create a project and add an Android app with the app's package name. Under *Project settings → Service accounts*, *Generate new private key*: that JSON file is `FCM_CREDENTIALS`. The app itself needs that project's `google-services.json` (it holds no secret).
+
+**iOS (APNs).** Needs a paid Apple Developer Program membership. Under *Certificates, Identifiers & Profiles → Keys*, create a key with *Apple Push Notifications service (APNs)* and download the `.p8` file (Apple lets you download it only once): that is `APNS_KEY_PATH`, with its Key ID in `APNS_KEY_ID` and your Team ID (top right of the developer site) in `APNS_TEAM_ID`. One key works for every app of the team, for alerts and for VoIP pushes.
+
+**Keep the key files secret.** They let anyone send notifications to every user of the app. Put them in `storage/app/private/push/` (git ignores that folder) and never commit them. With Docker, `storage` is a volume; copy them in with:
+
+```bash
+docker compose cp firebase.json app:/app/storage/app/private/push/firebase.json
+docker compose cp AuthKey_ABC123DEFG.p8 app:/app/storage/app/private/push/AuthKey.p8
+docker compose restart app queue        # the queue worker sends the pushes
+```
+
+A phone registers itself with `POST /push/native-tokens` after sign-in. Tokens the push services report as no longer valid are deleted by the server. Logs say only which platform answered what; they never contain a token or a message.
+
+## Deleting an account
+
+People delete their own account in the app (`DELETE /me` with their password; the app stores require it). Everything personal goes at once: every session, push registration and encryption device, the profile and avatar, group memberships and every file the account uploaded; a call it is in ends and video rooms it hosts end. Messages it sent stay in other people's chats, and calls in their history, from a "Deleted user". The users row stays behind as an empty, soft-deleted placeholder for exactly that: name "Deleted user", an unusable email and password, nothing else. The email address can register again. The exact rules are under [`DELETE /me`](docs/API.md#delete-me) in docs/API.md.
 
 ## End-to-end encryption
 
@@ -448,6 +485,7 @@ For a deployment with Docker the section above covers most of this. The list is 
 - [ ] `php artisan migrate --force` (not `migrate:fresh`, and do not seed production). The Docker stack does this on every start.
 - [ ] Without Docker: `php artisan storage:link`, then `php artisan config:cache route:cache event:cache`; run them again after every deploy.
 - [ ] `php artisan push:vapid` once, keys saved in `.env`.
+- [ ] For the phone app: the FCM service-account file and the APNs `.p8` key in `storage/app/private/push/` (not in git, not in the image), the `FCM_*` and `APNS_*` settings, and `APNS_PRODUCTION=true` for TestFlight and App Store builds.
 - [ ] Email: `MAIL_MAILER=smtp` with your mail server and a `MAIL_FROM_ADDRESS` your domain's SPF and DKIM allow, and `FRONTEND_URL` set to the app's address (the links in emails open it). With the default `log` mailer nobody receives a password reset link.
 
 **Processes** (Docker restarts them; otherwise use Supervisor or systemd)
@@ -508,6 +546,7 @@ Conventions: UUID primary keys and `foreignUuid` everywhere; routes under `/api/
 | Browser says "blocked by CORS" | The frontend origin is not in `CORS_ALLOWED_ORIGINS` (it must match scheme, host and port exactly), or the request sends a header that is not allowed |
 | WebSocket refuses to connect (`Origin not allowed`) | The frontend's **host name** is not in `REVERB_ALLOWED_ORIGINS` (host names only, no `https://` and no port), or the proxy does not forward `Upgrade` headers |
 | No push notifications | No `VAPID_*` keys, no queue worker, the app is open (online users are skipped), the chat is muted, or the browser never subscribed (`GET /push/subscriptions`) |
+| No notifications on a phone | The `FCM_*` / `APNS_*` settings or key files are missing or unreadable (that platform is then skipped), no queue worker, the phone never registered (`POST /push/native-tokens`), `APNS_PRODUCTION` does not match the build (sandbox or production), or `APNS_BUNDLE_ID` differs from the app's |
 | Users show as online for ever | The scheduler is not running (`presence:mark-offline`) |
 | Large uploads fail | `upload_max_filesize` / `post_max_size` / the proxy's body limit are below 25 MB |
 | `Class "Sodium…"` / `bcmath` errors | Without Docker: the `sodium` or `bcmath` PHP extension is missing |

@@ -90,6 +90,12 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(PushSubscription::class);
     }
 
+    /** The phone apps this person is signed in to, registered for native push (FCM or APNs). */
+    public function nativePushTokens(): HasMany
+    {
+        return $this->hasMany(NativePushToken::class);
+    }
+
     public function sentMessages(): HasMany
     {
         return $this->hasMany(Message::class, 'sender_id');

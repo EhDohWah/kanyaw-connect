@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\KeyBundleController;
 use App\Http\Controllers\Api\V1\LiveKitWebhookController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\MessageController;
+use App\Http\Controllers\Api\V1\NativePushTokenController;
 use App\Http\Controllers\Api\V1\PasswordController;
 use App\Http\Controllers\Api\V1\PresenceController;
 use App\Http\Controllers\Api\V1\PushSubscriptionController;
@@ -59,6 +60,8 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::post('me/avatar', [MeController::class, 'avatar']);
+        // The password guards it, so it shares the password-change limit (5 a minute).
+        Route::delete('me', [MeController::class, 'destroy'])->middleware('throttle:password-change');
         Route::put('me/password', [PasswordController::class, 'update'])->middleware('throttle:password-change');
         Route::post('me/heartbeat', [PresenceController::class, 'heartbeat'])->middleware('throttle:heartbeat');
         Route::get('users/presence', [PresenceController::class, 'index']);
@@ -107,6 +110,10 @@ Route::prefix('v1')->group(function () {
         Route::get('push/subscriptions', [PushSubscriptionController::class, 'index']);
         Route::post('push/subscriptions', [PushSubscriptionController::class, 'store'])->middleware('throttle:push-subscriptions');
         Route::delete('push/subscriptions/{subscription}', [PushSubscriptionController::class, 'destroy'])->middleware('can:manage,subscription');
+
+        // Native push: the phone app registers its FCM or APNs token (and PushKit token on iOS).
+        Route::post('push/native-tokens', [NativePushTokenController::class, 'store'])->middleware('throttle:native-push-tokens');
+        Route::delete('push/native-tokens/{token}', [NativePushTokenController::class, 'destroy'])->middleware('can:manage,token');
 
         Route::get('rooms', [RoomController::class, 'index']);
         Route::post('rooms', [RoomController::class, 'store']);

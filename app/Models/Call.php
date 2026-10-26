@@ -58,12 +58,12 @@ class Call extends Model
 
     public function caller(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'caller_id');
+        return $this->belongsTo(User::class, 'caller_id')->withTrashed();
     }
 
     public function callee(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'callee_id');
+        return $this->belongsTo(User::class, 'callee_id')->withTrashed();
     }
 
     /** Ringing or ongoing. */

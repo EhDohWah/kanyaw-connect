@@ -29,6 +29,7 @@ use App\Models\Room;
 use App\Models\RoomParticipant;
 use App\Models\User;
 use App\Services\LiveKitService;
+use App\Services\NativePush\NativePushSender;
 use App\Services\WebPushService;
 use Carbon\CarbonInterface;
 use Firebase\JWT\JWT;
@@ -39,6 +40,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\Support\FakeLiveKitService;
+use Tests\Support\FakeNativePushSender;
 use Tests\Support\FakeWebPushService;
 use Tests\TestCase;
 
@@ -302,6 +304,14 @@ function sendEncrypted($test, Chat $chat, Device $from, array $envelopes, array 
 }
 
 /** Replace web push with a recording fake that never touches the network (configured, as if VAPID keys were set). */
+function fakeNativePush(): FakeNativePushSender
+{
+    $fake = new FakeNativePushSender;
+    app()->instance(NativePushSender::class, $fake);
+
+    return $fake;
+}
+
 function fakeWebPush(): FakeWebPushService
 {
     $fake = new FakeWebPushService;

@@ -5,24 +5,29 @@ namespace App\Notifications;
 use App\Enums\ChatType;
 use App\Enums\MessageType;
 use App\Models\Message;
-use App\Notifications\Channels\WebPushChannel;
+use App\Models\NativePushToken;
+use App\Notifications\Concerns\BuildsNativePush;
+use App\Notifications\Concerns\ChoosesPushChannels;
+use App\Notifications\Contracts\NativePushMessage;
 use App\Notifications\Contracts\WebPushMessage;
+use App\Services\NativePush\NativePushSender;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Str;
 
 /**
- * "You have a new message", sent to the recipient's browsers by web push.
+ * "You have a new message", sent to the recipient's browsers by web push and to their phones by
+ * native push (an FCM notification on the `messages` channel, an APNs alert on iOS).
  *
  * The text is decided here, when the message is sent, and only the finished payload is queued. For
  * an end-to-end encrypted chat that is just "New message": no sender, no chat name, no preview.
  * (The chat and message ids are in the payload so the app can open the right conversation; the
  * payload itself is encrypted so that only the browser can read it, not the push service.)
  */
-class NewMessageNotification extends Notification implements ShouldQueue, WebPushMessage
+class NewMessageNotification extends Notification implements NativePushMessage, ShouldQueue, WebPushMessage
 {
-    use Queueable;
+    use BuildsNativePush, ChoosesPushChannels, Queueable;
 
     public const GENERIC_BODY = 'New message';
 
@@ -81,7 +86,19 @@ class NewMessageNotification extends Notification implements ShouldQueue, WebPus
      */
     public function via(object $notifiable): array
     {
-        return [WebPushChannel::class];
+        return $this->pushChannels($notifiable);
+    }
+
+    public function toNativePush(NativePushToken $registration, NativePushSender $sender): array
+    {
+        $data = array_diff_key($this->payload, ['title' => true, 'body' => true]);
+
+        return $this->nativeAlert($registration, $sender, $this->payload['title'], $this->payload['body'], $data, 'messages', config('push.ttl_seconds'), $this->payload['chat_id']);
+    }
+
+    public function retryNativePush(): bool
+    {
+        return true;
     }
 
     /**

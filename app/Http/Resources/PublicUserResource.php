@@ -23,6 +23,8 @@ class PublicUserResource extends JsonResource
             'name' => $this->name,
             'avatar_url' => $this->avatar_url,
             'avatar_thumb_url' => $this->avatar_thumb_url,
+            // Only present (true) for a deleted account, whose name is then "Deleted user" (see DeleteAccount).
+            'is_deleted' => $this->when($this->resource->trashed(), true),
         ];
     }
 }

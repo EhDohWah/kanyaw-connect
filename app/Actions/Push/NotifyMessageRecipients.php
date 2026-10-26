@@ -4,6 +4,7 @@ namespace App\Actions\Push;
 
 use App\Models\ChatMember;
 use App\Models\Message;
+use App\Models\NativePushToken;
 use App\Models\PushSubscription;
 use App\Models\User;
 use App\Notifications\NewMessageNotification;
@@ -19,8 +20,9 @@ class NotifyMessageRecipients
 
     /**
      * Queue a "New message" push for the chat members who should hear about it: everyone except
-     * the person who caused it, people who muted the chat, people with no subscribed browser and
-     * (by default) people whose app is open right now and already got the message live.
+     * the person who caused it, people who muted the chat, people with neither a subscribed browser
+     * nor a registered phone, and (by default) people whose app is open right now and already got the
+     * message live.
      *
      * Sending a message must never fail because of notifications, so problems are reported
      * (logged) and swallowed here.
@@ -29,10 +31,6 @@ class NotifyMessageRecipients
      */
     public function handle(Message $message, ?string $exceptUserId = null): void
     {
-        if (! $this->push->isConfigured()) {
-            return;
-        }
-
         try {
             $recipients = $this->recipients($message, $exceptUserId ?? $message->sender_id);
 
@@ -53,7 +51,7 @@ class NotifyMessageRecipients
             ->where('chat_id', $message->chat_id)
             ->when($exceptUserId, fn ($query) => $query->where('user_id', '!=', $exceptUserId))
             ->notMuted()
-            ->whereIn('user_id', PushSubscription::query()->select('user_id'))
+            ->where(fn ($query) => $this->reachable($query))
             ->pluck('user_id')
             ->all();
 
@@ -61,6 +59,16 @@ class NotifyMessageRecipients
             $ids = array_values(array_diff($ids, $this->presence->onlineAmong($ids)));
         }
 
-        return User::whereIn('id', $ids)->get();
+        return User::whereIn('id', $ids)->withExists(['pushSubscriptions', 'nativePushTokens'])->get();
+    }
+
+    /** People with a browser to push to (when web push is set up) or a phone. */
+    private function reachable($query): void
+    {
+        $query->whereIn('user_id', NativePushToken::query()->select('user_id'));
+
+        if ($this->push->isConfigured()) {
+            $query->orWhereIn('user_id', PushSubscription::query()->select('user_id'));
+        }
     }
 }

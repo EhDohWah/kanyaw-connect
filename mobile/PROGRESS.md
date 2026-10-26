@@ -8,7 +8,7 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 | Part | Status |
 |---|---|
 | 8A. Foundation | Built; reviewed by you on 26 Oct 2026, runs on a Redmi Note 11 (two device checks still to confirm, below) |
-| 8B. Backend: native push, call pushes, account deletion | Not started |
+| 8B. Backend: native push, call pushes, account deletion | Built and tested (1382 backend tests pass); waiting for your Firebase and Apple keys, then a real test push you approve |
 | 8C. Messaging and voice messages | Not started |
 | 8D. Meetings | Not started |
 | 8E. One-to-one calls (native ringing) | Not started |
@@ -166,3 +166,65 @@ the Expo account.
 Seen on the phone: one person's photo did not load and the row showed an empty circle. The avatar now falls back to the
 initials when a photo fails, as on the web (with a test). The photo addresses come from the backend's `APP_URL`; on a
 phone they must use an address the phone can reach (`http://127.0.0.1:8000` over USB with `adb reverse`).
+
+## 8B · Backend: native push, call pushes, account deletion
+
+All in the Laravel app at the root; nothing in `mobile/` yet (the app registers its token in 8F, and rings in 8E).
+
+- [x] **Phone registrations.** Table `native_push_tokens` (platform, token, optional PushKit `voip_token`, app version,
+  last seen), each tied to the login it was made with, so signing out removes it.
+  - `POST /push/native-tokens`: safe to repeat (the same token refreshes its row and answers `200`), a token that
+    arrives for another account moves to the current one, a PushKit token moves with it, `voip_token` only on iOS,
+    at most 20 phones per user, 20 requests per hour, and it needs the bearer token from sign-in.
+  - `DELETE /push/native-tokens/{id}`: owner only; anyone else gets `404`.
+- [x] **Senders.** No package: both services are called directly with Laravel's HTTP client, behind the
+  `NativePushSender` interface, with a fake for tests. `firebase/php-jwt` (actively maintained, Google's own PHP
+  library uses it) signs the two kinds of token the services want.
+  - FCM HTTP v1: an OAuth token made from the service-account key (RS256), cached until shortly before it expires.
+  - APNs over HTTP/2: a provider token signed with the `.p8` key (ES256), cached for 50 minutes; headers
+    `apns-push-type`, `apns-topic` (the bundle identifier, or `<bundle>.voip`), `apns-priority`, `apns-expiration`.
+  - *Checked:* the production Docker image's curl (8.14.1) speaks HTTP/2, which APNs requires.
+  - A token FCM or APNs reports as no longer valid is deleted; a dead PushKit token only loses the phone its ringing.
+    Logs carry the platform, the HTTP status and the error reason: never a token or a payload (a test checks).
+- [x] **Message pushes,** under the web-push rules (not the sender, not a muted chat, not someone whose app is open):
+  Android, a notification on channel `messages`; iOS, an alert grouped by chat. Encrypted chats say "New message" only.
+  Only the channels that can reach a person are queued (a phone-only person costs no web-push job).
+- [x] **Call pushes.** `call.incoming` goes to every phone: a VoIP push on iOS (topic `<bundle>.voip`, priority 10,
+  expiring at `ring_expires_at`), a high-priority FCM data message on Android whose TTL is the seconds left, with the
+  6B payload including `decline_url`. `call.ringing_over` `{type, call_id, reason}` is new: sent the same way when the
+  ringing stops (`answered`, `declined`, `cancelled`, `no_answer`, including the timeout job and the stale-call
+  clean-up). `call.missed` is an ordinary alert (Android channel `missed-calls`), never a VoIP push. Call pushes are
+  never retried; message and missed-call pushes are retried a few times when the service had a problem.
+  - *Later (8E):* if 8E picks `expo-callkit-telecom`, the Android copy of `call.ringing_over` becomes its `callEnded`
+    data message.
+- [x] **Account deletion,** `DELETE /me` with `{ password }`: a wrong password is `422` and changes nothing.
+  - Removed: every session, push registration and encryption device (contacts get `device.revoked`), the profile and
+    avatar, group memberships (ownership passes on; an empty group is deleted), every file the account uploaded, and
+    pending reset links. A ringing or ongoing call ends; video rooms it hosts end.
+  - Kept: its messages in other people's chats, and calls in their history, from "Deleted user" (with
+    `is_deleted: true` on the person in the API).
+  - *Changed from the default, and why:* the users row is not deleted but emptied and soft-deleted (name "Deleted user",
+    unusable email and password). Messages, calls and direct chats point at it, and a hard delete would either cascade
+    away the other person's call history or leave the direct chat without anyone on the other side. For the same reason
+    the account stays a member of its **direct** chats (groups are left): the other person still sees who the
+    conversation was with, and calling it is refused. The email address can register again.
+- [x] **Docs:** docs/API.md (both endpoints, the token object, `DELETE /me`, `is_deleted`, section 6.4 on phone push,
+  the phone transports and `call.ringing_over` in 8.2, rate limits), the Postman collection, the README (settings,
+  "Phone push (FCM and APNs)", "Deleting an account", deployment checklist, troubleshooting) and `.env.example`.
+- [ ] **A real test push to your phone,** once you send the keys and approve it.
+
+### Found while building
+
+- The Android TTL of a call push was counted with PHP's `time()` instead of Laravel's clock, so it ignored the clock in
+  tests; a test that moves time caught it.
+- The guard test "never holds a private key of a user" now also allows the push sender, which reads the server's own
+  Firebase and APNs keys (like the VAPID key already allowed there).
+- `ErrorOutputTest` used `DELETE /me` as its example of a method the API refuses; it now uses `PUT /me`.
+
+### Waiting for you
+
+- A Firebase project with an Android app registered as `org.example.kanyawconnect` (or the real package name), and
+  its service-account JSON key.
+- Whether you have an Apple Developer Program membership; if so, an APNs `.p8` key with its Key ID and your Team ID.
+- Optionally the real bundle identifier, to replace the placeholder everywhere at once.
+

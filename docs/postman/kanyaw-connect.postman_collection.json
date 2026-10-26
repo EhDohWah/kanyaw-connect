@@ -114,6 +114,10 @@
     {
       "key": "verifySignature",
       "value": ""
+    },
+    {
+      "key": "nativeTokenId",
+      "value": ""
     }
   ],
   "item": [
@@ -875,6 +879,42 @@
               ]
             },
             "description": "Presence of up to 100 people you share a chat with. Other ids are silently left out."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete my account",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "**Deletes the signed-in account for good** and signs out every device. Its messages stay in other people's chats from \"Deleted user\". Wrong password: 422 with `errors.password`. Limit: 5 a minute, shared with Change password. Try it on an account you made with Register, not a demo account you still need.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -2838,6 +2878,80 @@
               ]
             },
             "description": "Answers 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Register this phone for push",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/native-tokens",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "native-tokens"
+              ]
+            },
+            "description": "What the phone app sends after sign-in and at every start: its FCM token (Android) or APNs device token (iOS), and on iOS its PushKit token for calls. Safe to repeat: the same token answers 200 and refreshes the row. Limit: 20 an hour, at most 20 phones per user. The example tokens only work as a test: no push reaches a phone.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"android\",\n  \"token\": \"example-fcm-registration-token\",\n  \"app_version\": \"1.0.0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json(); const obj = json.data || json;",
+                  "if (obj && obj.id) { pm.collectionVariables.set('nativeTokenId', obj.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove a registered phone",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/push/native-tokens/{{nativeTokenId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "push",
+                "native-tokens",
+                "{{nativeTokenId}}"
+              ]
+            },
+            "description": "Stops push on that phone. Answers 204; someone else's registration answers 404."
           },
           "response": []
         }
