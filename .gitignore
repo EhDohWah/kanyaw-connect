@@ -29,3 +29,7 @@ dump.rdb
 
 # Holds the LiveKit secret (copy of docker/livekit/livekit.production.example.yaml)
 /docker/livekit/livekit.production.yaml
+
+# Firebase's per-project app files: they belong in mobile/ (ignored there too), never in git
+google-services.json
+GoogleService-Info.plist
