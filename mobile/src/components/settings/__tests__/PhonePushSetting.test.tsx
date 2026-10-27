@@ -89,3 +89,20 @@ it('says so when this phone could not turn notifications on', async () => {
   ).toBeOnTheScreen()
   expect(screen.getByLabelText('Notifications on this phone')).toHaveProp('value', false)
 })
+
+it("shows the server's answer when the phone got a token but the server refused it", async () => {
+  calls = fakeApi(() => ({ status: 404, data: { message: 'The page or item was not found.' } })).calls
+
+  await fireEvent(await showSetting(), 'valueChange', true)
+
+  expect(await screen.findByText('The page or item was not found.')).toBeOnTheScreen()
+  expect(screen.queryByText('This phone could not turn on notifications. Please try again later.')).toBeNull()
+})
+
+it('says the server cannot be reached when it does not answer', async () => {
+  calls = fakeApi(() => ({ network: true })).calls
+
+  await fireEvent(await showSetting(), 'valueChange', true)
+
+  expect(await screen.findByText(i18n.t('errors.network'))).toBeOnTheScreen()
+})

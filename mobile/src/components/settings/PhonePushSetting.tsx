@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppState, Linking, StyleSheet, Switch, View } from 'react-native'
 
+import { isApiError } from '@/api/errors'
 import { AppText } from '@/components/common/AppText'
 import { Button } from '@/components/common/Button'
 import { Notice } from '@/components/common/Notice'
 import { disablePhonePush, enablePhonePush, phonePushState, type PhonePushState } from '@/push/phonePush'
 import { colors, space, TOUCH_TARGET } from '@/theme/tokens'
+import { errorMessage } from '@/utils/errorMessage'
 
 type Busy = 'checking' | 'turningOn' | 'turningOff' | null
 
@@ -15,7 +17,8 @@ export function PhonePushSetting({ userId }: { userId: string }) {
   const { t } = useTranslation()
   const [state, setState] = useState<PhonePushState>('off')
   const [busy, setBusy] = useState<Busy>('checking')
-  const [failed, setFailed] = useState(false)
+  /** Why turning it on or off failed: the server's own answer, or ours when the phone could not get a token. */
+  const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
     let current = true
@@ -40,7 +43,7 @@ export function PhonePushSetting({ userId }: { userId: string }) {
   }, [userId])
 
   async function toggle(on: boolean): Promise<void> {
-    setFailed(false)
+    setFailed(null)
     setBusy(on ? 'turningOn' : 'turningOff')
     try {
       if (on) setState(await enablePhonePush(userId))
@@ -48,8 +51,8 @@ export function PhonePushSetting({ userId }: { userId: string }) {
         await disablePhonePush()
         setState('off')
       }
-    } catch {
-      setFailed(true)
+    } catch (error) {
+      setFailed(isApiError(error) ? errorMessage(error, t) : t('settings.phonePush.failed'))
     } finally {
       setBusy(null)
     }
@@ -90,7 +93,7 @@ export function PhonePushSetting({ userId }: { userId: string }) {
           />
         </>
       ) : null}
-      {failed ? <Notice tone="error" text={t('settings.phonePush.failed')} /> : null}
+      {failed ? <Notice tone="error" text={failed} /> : null}
     </View>
   )
 }
