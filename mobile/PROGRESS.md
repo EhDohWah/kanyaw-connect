@@ -163,6 +163,10 @@ the Expo account.
 | Kill and reopen (token kept), sign out | Xiaomi Redmi Note 11 (2201117TG) | Android 13 | 26 Oct 2026 | Not shown in the screenshots; to confirm |
 | Burmese and S'gaw Karen text | | | | Not checked yet |
 
+Seen on the phone (27 October 2026): the Profile photo area stayed empty while the photo was still loading (an
+address the phone cannot reach only fails after a long timeout). The initials now show until the photo has loaded,
+with a test.
+
 Seen on the phone: one person's photo did not load and the row showed an empty circle. The avatar now falls back to the
 initials when a photo fails, as on the web (with a test). The photo addresses come from the backend's `APP_URL`; on a
 phone they must use an address the phone can reach (`http://127.0.0.1:8000` over USB with `adb reverse`).
@@ -220,7 +224,9 @@ All in the Laravel app at the root; nothing in `mobile/` yet (the app registers 
     prints each push service's answer (no tokens).
   - *Still 8F:* localised channel names, the `calls` channel, opening the chat when a notification is tapped, the
     explanation after sign-in.
-- [ ] **A real test push to your phone:** you run `push:test` once the Firebase files are in place.
+- [ ] **A real test push to your phone:** Firebase is set up (project "Kanyaw Connect", Android app
+  `org.example.kanyawconnect`) and you reported on 27 Oct 2026 that the Redmi Note 11 shows the notification. To tick:
+  the `push:test` result, and a message notification arriving while the app is closed.
 
 ### Found while building
 
