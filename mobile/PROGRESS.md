@@ -8,7 +8,7 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 | Part | Status |
 |---|---|
 | 8A. Foundation | Built; reviewed by you on 26 Oct 2026, runs on a Redmi Note 11 (two device checks still to confirm, below) |
-| 8B. Backend: native push, call pushes, account deletion | Built and tested; waiting for your Firebase set-up and a real test push you send with `push:test` |
+| 8B. Backend: native push, call pushes, account deletion | Built; real test push confirmed on the Redmi (27 Oct 2026); a message notification with the app closed still to confirm |
 | 8C. Messaging and voice messages | Not started |
 | 8D. Meetings | Not started |
 | 8E. One-to-one calls (native ringing) | Not started |
@@ -224,9 +224,13 @@ All in the Laravel app at the root; nothing in `mobile/` yet (the app registers 
     prints each push service's answer (no tokens).
   - *Still 8F:* localised channel names, the `calls` channel, opening the chat when a notification is tapped, the
     explanation after sign-in.
-- [ ] **A real test push to your phone:** Firebase is set up (project "Kanyaw Connect", Android app
-  `org.example.kanyawconnect`) and you reported on 27 Oct 2026 that the Redmi Note 11 shows the notification. To tick:
-  the `push:test` result, and a message notification arriving while the app is closed.
+- [x] **A real test push to your phone** (run by you, 27 Oct 2026, Xiaomi Redmi Note 11, Android 13, backend in
+  Docker): `push:test` answered `sent` every time and the notification appeared. Found on the way: the backend `.env`
+  needs `FCM_CREDENTIALS` (Docker reads it only when the containers are recreated, `docker compose up -d`), and
+  `google-services.json` belongs in `mobile/`, the service-account key on the server.
+- [ ] **A message notification while the app is closed** (the queue and the "app is open" rule): still to confirm.
+  Close the app, wait two minutes (the server counts you online for 90 seconds after the last heartbeat, and the web
+  app counts too), then send a message from another account.
 
 ### Found while building
 
