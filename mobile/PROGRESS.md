@@ -234,6 +234,11 @@ All in the Laravel app at the root; nothing in `mobile/` yet (the app registers 
 
 ### Found while building
 
+- *Found with your phone (27 Oct 2026):* message notifications never arrived on Android, while `push:test` did. FCM
+  refused them (400 `INVALID_ARGUMENT`) because their data had a `message_type` key, a name FCM keeps for itself. On
+  Android it is now `message_kind`; building an FCM message with any reserved key (`from`, `message_type`, `google…`,
+  `gcm…`) now fails in the tests instead of at Google; and the log names the field FCM objected to. The test fake
+  had accepted any key, which is why the tests did not catch it.
 - The Android TTL of a call push was counted with PHP's `time()` instead of Laravel's clock, so it ignored the clock in
   tests; a test that moves time caught it.
 - The guard test "never holds a private key of a user" now also allows the push sender, which reads the server's own

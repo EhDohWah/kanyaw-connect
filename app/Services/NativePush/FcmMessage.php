@@ -8,9 +8,16 @@ namespace App\Services\NativePush;
  */
 final readonly class FcmMessage
 {
+    /** Data keys FCM keeps for itself: a message using one is refused whole (400 INVALID_ARGUMENT). */
+    public const RESERVED_KEYS = ['from', 'message_type'];
+
+    public const RESERVED_PREFIXES = ['google', 'gcm'];
+
     /**
-     * @param  array<string, string>  $data  FCM only accepts string values
+     * @param  array<string, string>  $data  FCM only accepts string values, and no reserved key (see isReservedKey)
      * @param  array{title: string, body: string}|null  $notification  null for a data-only message
+     *
+     * @throws \InvalidArgumentException for a reserved data key: a mistake in our code, not something to send
      */
     public function __construct(
         public string $token,
@@ -19,7 +26,30 @@ final readonly class FcmMessage
         public ?string $channelId = null,
         public bool $highPriority = false,
         public ?int $ttlSeconds = null,
-    ) {}
+    ) {
+        foreach (array_keys($data) as $key) {
+            if (self::isReservedKey((string) $key)) {
+                throw new \InvalidArgumentException("FCM does not accept the data key [{$key}].");
+            }
+        }
+    }
+
+    public static function isReservedKey(string $key): bool
+    {
+        $lower = strtolower($key);
+
+        if (in_array($lower, self::RESERVED_KEYS, true)) {
+            return true;
+        }
+
+        foreach (self::RESERVED_PREFIXES as $prefix) {
+            if (str_starts_with($lower, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /** @param  array<string, mixed>  $values */
     public static function stringify(array $values): array

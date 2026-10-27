@@ -12,6 +12,23 @@ use App\Services\NativePush\NativePushSender;
 trait BuildsNativePush
 {
     /**
+     * FCM refuses a message whose data uses one of its own key names, so on Android `message_type` travels as
+     * `message_kind` (iOS and web push keep `message_type`). See docs/API.md, section 6.4.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string>
+     */
+    protected function fcmData(array $data): array
+    {
+        if (array_key_exists('message_type', $data)) {
+            $data['message_kind'] = $data['message_type'];
+            unset($data['message_type']);
+        }
+
+        return FcmMessage::stringify($data);
+    }
+
+    /**
      * A notification the phone shows by itself: an FCM notification on an Android channel, an
      * APNs alert on iOS. `$data` travels with it so a tap can open the right screen.
      *
@@ -21,7 +38,7 @@ trait BuildsNativePush
     protected function nativeAlert(NativePushToken $registration, NativePushSender $sender, string $title, string $body, array $data, string $channel, int $ttlSeconds, ?string $threadId = null): array
     {
         if ($registration->platform === PushPlatform::Android) {
-            return [new FcmMessage($registration->token, FcmMessage::stringify($data), ['title' => $title, 'body' => $body], $channel, true, $ttlSeconds)];
+            return [new FcmMessage($registration->token, $this->fcmData($data), ['title' => $title, 'body' => $body], $channel, true, $ttlSeconds)];
         }
 
         $aps = array_filter([
@@ -45,7 +62,7 @@ trait BuildsNativePush
     protected function nativeCallPush(NativePushToken $registration, NativePushSender $sender, array $data, int $expiresAt): array
     {
         if ($registration->platform === PushPlatform::Android) {
-            return [new FcmMessage($registration->token, FcmMessage::stringify($data), highPriority: true, ttlSeconds: max(1, $expiresAt - now()->getTimestamp()))];
+            return [new FcmMessage($registration->token, $this->fcmData($data), highPriority: true, ttlSeconds: max(1, $expiresAt - now()->getTimestamp()))];
         }
 
         if ($registration->voip_token === null) {

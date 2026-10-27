@@ -66,8 +66,9 @@ describe('on Android', function () {
                 'type' => 'message.new',
                 'chat_id' => $chat->id,
                 'encrypted' => 'false',
-                'message_type' => 'text',
+                'message_kind' => 'text',
             ])
+            ->and($message['data'])->not->toHaveKey('message_type') // FCM keeps that name for itself
             ->and($message['data'])->not->toHaveKeys(['title', 'body'])
             ->and(array_filter($message['data'], fn ($value) => ! is_string($value)))->toBe([]);
     });
@@ -99,7 +100,7 @@ describe('on iOS', function () {
                 'sound' => 'default',
                 'thread-id' => $chat->id,
             ])
-            ->and($message->payload)->toMatchArray(['type' => 'message.new', 'chat_id' => $chat->id]);
+            ->and($message->payload)->toMatchArray(['type' => 'message.new', 'chat_id' => $chat->id, 'message_type' => 'text']);
     });
 });
 
@@ -173,7 +174,7 @@ describe('who is notified', function () {
         $ios = $this->native->apns()[0]->payload;
         expect($android['notification'])->toBe(['title' => 'Kanyaw Connect', 'body' => 'New message'])
             ->and($android['data']['encrypted'])->toBe('true')
-            ->and($android['data'])->not->toHaveKey('message_type')
+            ->and($android['data'])->not->toHaveKey('message_kind')
             ->and($ios['aps']['alert'])->toBe(['title' => 'Kanyaw Connect', 'body' => 'New message']);
     });
 });

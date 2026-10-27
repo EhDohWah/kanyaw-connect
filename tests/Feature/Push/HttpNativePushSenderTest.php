@@ -297,3 +297,36 @@ it('never writes a device token or a message body to the log', function () {
         expect($line)->not->toContain(FCM_TOKEN)->not->toContain(APNS_TOKEN)->not->toContain('secret words');
     }
 });
+
+it('logs which field FCM objected to, but never a value', function () {
+    $logged = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$logged) {
+        $logged[] = $event->context;
+    });
+    Http::fake([
+        'oauth2.googleapis.com/*' => Http::response(['access_token' => 'ya29.x', 'expires_in' => 3599]),
+        'fcm.googleapis.com/*' => Http::response(['error' => ['code' => 400, 'status' => 'INVALID_ARGUMENT', 'details' => [
+            ['@type' => 'type.googleapis.com/google.rpc.BadRequest', 'fieldViolations' => [
+                ['field' => 'message.data', 'description' => 'Invalid data payload key: secret words'],
+                ['field' => 'message.data[secret words]'],
+            ]],
+        ]]], 400),
+    ]);
+
+    expect(sender()->send(new FcmMessage(FCM_TOKEN, ['kind' => 'text'])))->toBe(PushOutcome::Failed);
+
+    expect($logged)->toHaveCount(1)
+        ->and($logged[0])->toMatchArray(['reason' => 'INVALID_ARGUMENT', 'fields' => ['message.data']])
+        ->and(json_encode($logged[0]))->not->toContain('secret words');
+});
+
+describe('data keys', function () {
+    it('refuses the keys FCM keeps for itself, so such a message is never sent', function (string $key) {
+        expect(fn () => new FcmMessage(FCM_TOKEN, [$key => 'x']))->toThrow(InvalidArgumentException::class);
+    })->with(['from', 'message_type', 'google.sent_time', 'gcm.notification.title', 'Google_x']);
+
+    it('accepts ordinary keys', function () {
+        expect((new FcmMessage(FCM_TOKEN, ['type' => 'message.new', 'message_kind' => 'text', 'chat_id' => 'c']))->data)
+            ->toHaveKey('message_kind');
+    });
+});

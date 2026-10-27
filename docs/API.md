@@ -2821,7 +2821,7 @@ The phone app does not use web push: it gets notifications through Firebase Clou
 
 **Message notifications** follow exactly the rules of [section 6.3](#63-who-is-notified), with the same text as web push (["New message"](#62-what-a-notification-contains) in encrypted chats):
 
-- **Android:** an FCM *notification* message on the channel **`messages`**, high priority, kept by FCM for up to a day. The fields of [section 6.2](#62-what-a-notification-contains) other than `title` and `body` travel in `data`, **all as strings** (`"encrypted": "false"`).
+- **Android:** an FCM *notification* message on the channel **`messages`**, high priority, kept by FCM for up to a day. The fields of [section 6.2](#62-what-a-notification-contains) other than `title` and `body` travel in `data`, **all as strings** (`"encrypted": "false"`), with one rename: `message_type` is called **`message_kind`** there, because FCM refuses its own key names in `data` (`from`, `message_type`, and anything starting with `google` or `gcm`).
 - **iOS:** an APNs **alert** (`apns-push-type: alert`, topic = the bundle identifier, priority 10, expiring after a day), `thread-id` = the chat id so iOS groups a chat's notifications. The same fields sit next to `aps`:
 
 ```json

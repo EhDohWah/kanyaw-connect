@@ -93,9 +93,11 @@ class HttpNativePushSender implements NativePushSender
 
         $dead = $code === 'UNREGISTERED' || ($code === 'INVALID_ARGUMENT' && $this->fcmTokenRejected($response));
 
-        Log::log($dead ? 'info' : 'warning', 'Native push: FCM did not accept a message.', [
+        // Which part of the request FCM objected to (a field path such as "message.data"): never a value.
+        Log::log($dead ? 'info' : 'warning', 'Native push: FCM did not accept a message.', array_filter([
             'platform' => 'android', 'status' => $response->status(), 'reason' => $code,
-        ]);
+            'fields' => $this->fcmFieldViolations($response) ?: null,
+        ]));
 
         return $dead ? PushOutcome::Expired : PushOutcome::Failed;
     }
@@ -163,15 +165,32 @@ class HttpNativePushSender implements NativePushSender
     /** INVALID_ARGUMENT can mean many things; only a rejected registration token means the token is dead. */
     private function fcmTokenRejected(Response $response): bool
     {
+        if (in_array('message.token', $this->fcmFieldViolations($response), true)) {
+            return true;
+        }
+
+        return str_contains((string) $response->json('error.message'), 'registration token');
+    }
+
+    /**
+     * The field paths in FCM's error details. Only paths made of letters, dots and brackets are kept, so
+     * nothing a client sent can reach the log through here.
+     *
+     * @return list<string>
+     */
+    private function fcmFieldViolations(Response $response): array
+    {
+        $fields = [];
         foreach ((array) $response->json('error.details', []) as $detail) {
             foreach ((array) ($detail['fieldViolations'] ?? []) as $violation) {
-                if (($violation['field'] ?? null) === 'message.token') {
-                    return true;
+                $field = $violation['field'] ?? null;
+                if (is_string($field) && preg_match('/^[A-Za-z0-9_.\[\]]{1,100}$/', $field)) {
+                    $fields[] = $field;
                 }
             }
         }
 
-        return str_contains((string) $response->json('error.message'), 'registration token');
+        return $fields;
     }
 
     /* ------------------------------------------------------------------------------------ APNs --- */
