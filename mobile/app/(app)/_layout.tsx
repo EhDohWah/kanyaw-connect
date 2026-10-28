@@ -5,6 +5,7 @@ import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area
 
 import { OfflineBanner } from '@/components/common/OfflineBanner'
 import { StateMessage } from '@/components/common/StateMessage'
+import { Toast } from '@/components/common/Toast'
 import { useAppSession } from '@/hooks/useAppSession'
 import { useAuthStore } from '@/stores/auth'
 import { isOfflineShown, useRealtimeStore } from '@/stores/realtime'
@@ -48,11 +49,17 @@ export default function SignedInLayout() {
         <Stack screenOptions={{ ...headerOptions(i18n.language), headerBackButtonDisplayMode: 'minimal' }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="chats/[id]" options={{ title: t('placeholders.chatTitle') }} />
+          <Stack.Screen name="chats/info/[id]" options={{ title: t('chat.conversation.info') }} />
+          <Stack.Screen
+            name="photo"
+            options={{ presentation: 'fullScreenModal', headerShown: false, animation: 'fade' }}
+          />
           <Stack.Screen name="rooms/[id]" options={{ title: t('placeholders.roomTitle') }} />
           <Stack.Screen name="calls/[id]" options={{ title: t('placeholders.callTitle') }} />
           <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
         </Stack>
       </SafeAreaInsetsContext.Provider>
+      <Toast />
     </View>
   )
 }

@@ -31,6 +31,8 @@ function server(
     if (special) return special
     if (call.url === '/me') return { data: { data: makeUser() } }
     if (call.url === '/chats') return { data: { data: chats, links: { next: null }, meta: {} } }
+    // A chat this person is not in, as the real API answers.
+    if (call.method === 'get' && call.url.startsWith('/chats/')) return { status: 404, data: { message: 'Not found.' } }
     return { status: 204 }
   })
 }
@@ -155,7 +157,7 @@ describe('signed in', () => {
   })
 
   it.each([
-    ['/chats/c1', 'Coming soon'],
+    ['/chats/c1', 'This chat does not exist, or you are not in it.'],
     ['/rooms/r1', 'The meeting room will open here.'],
     ['/calls/k1', 'Call'],
   ])('the link %s opens its screen', async (url, text) => {

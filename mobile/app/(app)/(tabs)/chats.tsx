@@ -1,26 +1,17 @@
 import { useRouter } from 'expo-router'
 import { MessageCircle } from 'lucide-react-native'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native'
 
 import { ChatRow } from '@/components/chat/ChatRow'
 import { AppText } from '@/components/common/AppText'
 import { StateMessage } from '@/components/common/StateMessage'
+import { useMinute } from '@/hooks/useMinute'
 import { useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
 import { colors, space } from '@/theme/tokens'
 import { errorMessage } from '@/utils/errorMessage'
-
-/** The current time, moved on once a minute, so "Yesterday" becomes a date at midnight. */
-function useMinute(): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(timer)
-  }, [])
-  return now
-}
 
 export default function ChatsScreen() {
   const { t } = useTranslation()
