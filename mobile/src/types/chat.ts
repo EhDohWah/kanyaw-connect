@@ -1,4 +1,5 @@
-// Ported from frontend/src/types/chat.ts. The send-draft and pending-message types come with the conversation (8C).
+// Ported from frontend/src/types/chat.ts. The phone's difference: a file to send is a local file (a URI), not a File.
+import type { ApiError } from '@/api/errors'
 import type { PublicUser } from '@/types/user'
 
 /** Mirrors the Chat, Message and Attachment objects of docs/API.md (section 2). */
@@ -66,6 +67,42 @@ export interface Message {
   attachment: Attachment | null
   created_at: string
 }
+
+/** A file on the phone, picked or recorded, waiting to be uploaded. */
+export interface LocalFile {
+  /** `file://` (or `content://` on Android): readable by the upload and by the image and audio players. */
+  uri: string
+  name: string
+  mimeType: string
+  /** Bytes, when the picker knows it. */
+  size: number | null
+}
+
+/** What `POST /chats/{chat}/messages` needs to resend a message: everything the person chose, kept until it is sent. */
+export interface SendDraft {
+  type: Exclude<MessageType, 'system'>
+  content: string
+  replyToId: string | null
+  /** The file to upload first (kept so a retry can upload again if that was what failed). */
+  file: LocalFile | null
+  /** Set once the upload has succeeded, so a retry does not upload twice. */
+  attachmentId: string | null
+  /** A recorded voice message: its length and waveform, as measured while recording. */
+  voice?: VoiceHints | null
+}
+
+export interface PendingInfo {
+  status: 'sending' | 'failed'
+  clientId: string
+  /** 0 to 100 while a file is going up. */
+  progress: number | null
+  /** Why it failed, kept as the error itself so the screen can word it in the current language. */
+  error: ApiError | null
+  draft: SendDraft
+}
+
+/** A message as the conversation holds it: confirmed by the server, or still on its way (`pending`). */
+export type TimelineMessage = Message & { pending?: PendingInfo }
 
 /** What a voice message says about itself, for the player to draw before anything is downloaded. */
 export interface VoiceHints {

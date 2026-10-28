@@ -94,3 +94,12 @@ export function makeChat(overrides: Partial<Chat> = {}): Chat {
     ...overrides,
   }
 }
+
+/** One page of a cursor-paginated list, as the API sends it. */
+export function page<T>(data: T[], next: string | null = null) {
+  return {
+    data,
+    links: { first: null, last: null, prev: null, next },
+    meta: { path: '', per_page: 30, next_cursor: null, prev_cursor: null },
+  }
+}

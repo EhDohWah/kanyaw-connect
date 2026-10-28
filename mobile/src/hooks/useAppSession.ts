@@ -6,10 +6,13 @@ import { AppState } from 'react-native'
 import { sendHeartbeat } from '@/api/me'
 import { createHeartbeat } from '@/hooks/heartbeat'
 import { forgetPhonePush, refreshPhonePush } from '@/push/phonePush'
-import { onResync, realtimeLifecycle } from '@/realtime'
+import { onResync, realtime, realtimeLifecycle } from '@/realtime'
 import { onBeforeSignOut, useAuthStore } from '@/stores/auth'
 import { useChatsStore } from '@/stores/chats'
+import { useDraftsStore } from '@/stores/drafts'
+import { useMessagesStore } from '@/stores/messages'
 import { useRealtimeStore } from '@/stores/realtime'
+import { useTypingStore } from '@/stores/typing'
 
 /**
  * Everything that runs while someone is signed in, started by the signed-in layout: the WebSocket (open in the
@@ -49,7 +52,12 @@ export function useAppSession(): void {
     const heartbeat = createHeartbeat({ send: () => sendHeartbeat() })
     heartbeat.start()
 
-    const stopResync = onResync(() => void useChatsStore.getState().refresh())
+    // Events sent while the socket was down (or the app was in the background) are not replayed: ask again for the
+    // chat list and the newest messages of every chat that is open.
+    const stopResync = onResync(() => {
+      void useChatsStore.getState().refresh()
+      for (const chatId of realtime.watchedChatIds()) void useMessagesStore.getState().resync(chatId)
+    })
     void useChatsStore.getState().load()
 
     return () => {
@@ -60,6 +68,9 @@ export function useAppSession(): void {
       // Leaving the signed-in screens means signing out: close the socket and forget this person's data.
       realtimeLifecycle.signOut()
       useChatsStore.getState().reset()
+      useMessagesStore.getState().reset()
+      useTypingStore.getState().reset()
+      useDraftsStore.getState().reset()
       useRealtimeStore.getState().reset()
     }
   }, [])
