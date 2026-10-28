@@ -36,7 +36,7 @@ export interface PickedImage {
 }
 
 export interface AvatarTools {
-  /** Scales the picture so its longest side is at most `maxEdge`, and saves it as a JPEG. */
+  /** Scales the picture to `size` (one side; the other follows) and saves it as a JPEG. */
   shrink(uri: string, size: { width?: number; height?: number }, quality: number): Promise<{ uri: string }>
   /** The size of a local file in bytes. */
   sizeOf(uri: string): number
@@ -65,7 +65,8 @@ export function imageType(image: Pick<PickedImage, 'mimeType' | 'fileName' | 'ur
   return (extension && EXTENSION_TYPES[extension]) || null
 }
 
-const defaultTools: AvatarTools = {
+/** The real tools; tests pass their own. */
+export const imageTools: AvatarTools = {
   async shrink(uri, size, quality) {
     // Decode at the target size: a 12-megapixel photo decoded in full can run a 2 GB phone out of memory.
     const context = ImageManipulator.manipulate(uri, { maxWidth: size.width, maxHeight: size.height })
@@ -91,7 +92,7 @@ const defaultTools: AvatarTools = {
  * A JPEG, PNG or WebP that already fits is sent untouched; anything bigger (or an iPhone's HEIC photo) is scaled down
  * and saved as a JPEG. GIF, SVG and anything else are refused here, before anything is sent.
  */
-export async function prepareAvatar(image: PickedImage, tools: AvatarTools = defaultTools): Promise<AvatarFile> {
+export async function prepareAvatar(image: PickedImage, tools: AvatarTools = imageTools): Promise<AvatarFile> {
   const type = imageType(image)
   const accepted = type !== null && (AVATAR_TYPES as readonly string[]).includes(type)
   if (!type || (!accepted && !CONVERTIBLE.has(type))) throw new AvatarError('type')

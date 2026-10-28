@@ -1,6 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import * as SecureStore from 'expo-secure-store'
-import { Alert } from 'react-native'
+import * as DocumentPicker from 'expo-document-picker'
+import * as ImagePicker from 'expo-image-picker'
+import * as MediaLibrary from 'expo-media-library'
+import * as Sharing from 'expo-sharing'
+import { Alert, Linking, Platform } from 'react-native'
 
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -8,7 +12,7 @@ import { useChatsStore } from '@/stores/chats'
 import { useDraftsStore } from '@/stores/drafts'
 import { useMessagesStore } from '@/stores/messages'
 import { useTypingStore } from '@/stores/typing'
-import type { Chat, Message } from '@/types/chat'
+import type { Attachment, Chat, Message } from '@/types/chat'
 import { CHAT_ID, ME, PAW, makeChat, makeMessage, makeUser, page, person } from '@/testing/factories'
 import { echoes, lastEcho } from '@/testing/fakeEcho'
 import { fakeApi, restoreApi, type Call, type Reply } from '@/testing/fakeApi'
@@ -18,6 +22,53 @@ jest.mock('@/realtime/echo', () => ({
   createEcho: (token: string) => jest.requireActual('@/testing/fakeEcho').fakeEchoFactory(token),
 }))
 jest.mock('expo-device', () => ({ modelName: 'Pixel 7' }))
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest.fn(),
+  launchCameraAsync: jest.fn(),
+  getCameraPermissionsAsync: jest.fn(),
+  requestCameraPermissionsAsync: jest.fn(),
+}))
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }))
+jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(async () => undefined) }))
+// The photo viewer's pinch-to-zoom runs on the UI thread (Reanimated), which Jest cannot run: a plain picture stands in.
+jest.mock('@/components/chat/ZoomableImage', () => {
+  const { Image } = jest.requireActual('expo-image')
+  return {
+    ZoomableImage: ({ uri, label }: { uri: string; label: string }) => (
+      <Image source={uri} accessible accessibilityLabel={label} />
+    ),
+  }
+})
+jest.mock('expo-media-library', () => ({ requestPermissionsAsync: jest.fn(), Asset: { create: jest.fn() } }))
+// The app's cache, in memory: downloads are recorded, and every file "exists" once downloaded.
+jest.mock('expo-file-system', () => {
+  const join = (parts: unknown[]) => parts.map((part) => (part as { uri?: string }).uri ?? String(part)).join('/')
+  const downloads: { url: string; to: string }[] = []
+  class Directory {
+    uri: string
+    constructor(...parts: unknown[]) {
+      this.uri = join(parts)
+    }
+    create() {}
+  }
+  class File {
+    uri: string
+    constructor(...parts: unknown[]) {
+      this.uri = join(parts)
+    }
+    get exists() {
+      return downloads.some((download) => download.to === this.uri)
+    }
+    get size() {
+      return 1000
+    }
+    static async downloadFileAsync(url: string, target: File) {
+      downloads.push({ url, to: target.uri })
+      return target
+    }
+  }
+  return { Directory, File, Paths: { cache: { uri: 'file:///cache' } }, __downloads: downloads }
+})
 jest.setTimeout(20_000)
 
 const store = SecureStore as unknown as { __reset(): void }
@@ -286,5 +337,215 @@ describe('live events', () => {
     )
     expect(await screen.findByText('On my way')).toBeOnTheScreen()
     await waitFor(() => expect(screen.queryByText('Naw Paw Say is typing…')).toBeNull())
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ attachments --- */
+
+const picker = jest.mocked(ImagePicker)
+const documents = jest.mocked(DocumentPicker)
+const downloads = (jest.requireMock('expo-file-system') as { __downloads: { url: string; to: string }[] }).__downloads
+
+function attachment(overrides: Partial<Attachment> = {}): Attachment {
+  return {
+    id: 'att-1',
+    original_name: 'Minutes.pdf',
+    mime_type: 'application/pdf',
+    size: 1000,
+    url: `https://api.example.org/api/v1/attachments/att-1/file?expires=${Math.floor(Date.now() / 1000) + 3600}&signature=x`,
+    thumbnail_url: null,
+    created_at: '2026-03-14T09:00:00.000000Z',
+    ...overrides,
+  }
+}
+
+/** Answers uploads with an attachment, and sends with the saved message (type, caption and attachment id kept). */
+function serverWithUploads(history: Message[] = [makeMessage({ content: 'Hi' })]) {
+  return server({
+    history,
+    extra: (call) =>
+      call.method === 'post' && call.url === `/chats/${CHAT_ID}/attachments`
+        ? {
+            status: 201,
+            data: { data: attachment({ id: 'up-1', original_name: 'IMG_0001.jpg', mime_type: 'image/jpeg' }) },
+          }
+        : undefined,
+    send: (call) => {
+      const body = call.body as { client_id: string; type: Message['type']; content?: string }
+      return {
+        status: 201,
+        data: {
+          data: makeMessage({
+            id: 'saved-photo',
+            sender_id: ME,
+            type: body.type,
+            content: body.content ?? null,
+            client_id: body.client_id,
+            attachment: attachment({ id: 'up-1', original_name: 'IMG_0001.jpg', mime_type: 'image/jpeg' }),
+          }),
+        },
+      }
+    },
+  })
+}
+
+async function chooseFromSheet(option: string): Promise<void> {
+  await fireEvent.press(await screen.findByLabelText('Attach a file'))
+  await fireEvent.press(await screen.findByText(option))
+}
+
+describe('attachments', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    downloads.length = 0
+    // The sheet hands over to the picker as soon as it closes (on iOS, once it says it has gone).
+    jest.replaceProperty(Platform, 'OS', 'android')
+  })
+
+  it('sends a photo from the library with a caption: uploaded first, then sent with its attachment id', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: 'file:///picked/IMG_0001.jpg',
+          width: 1200,
+          height: 900,
+          mimeType: 'image/jpeg',
+          fileName: 'IMG_0001.jpg',
+          fileSize: 300_000,
+        },
+      ],
+    } as ImagePicker.ImagePickerResult)
+    const { calls } = serverWithUploads()
+    await openChat()
+    await screen.findByText('Hi')
+
+    await chooseFromSheet('Photo library')
+    expect(await screen.findByLabelText('Remove attachment')).toBeOnTheScreen()
+    expect(screen.getByPlaceholderText('Add a caption')).toBeOnTheScreen()
+
+    await fireEvent.changeText(screen.getByLabelText('Write a message'), 'The new hall')
+    await fireEvent.press(screen.getByLabelText('Send message'))
+
+    await waitFor(() => expect(sends(calls)).toHaveLength(1))
+    const upload = calls.findIndex((c) => c.url === `/chats/${CHAT_ID}/attachments`)
+    expect(upload).toBeGreaterThan(-1)
+    expect(upload).toBeLessThan(calls.indexOf(sends(calls)[0] as Call))
+    expect(sends(calls)[0]?.body).toMatchObject({
+      type: 'image',
+      content: 'The new hall',
+      metadata: { attachment_id: 'up-1' },
+    })
+    await waitFor(() => expect(screen.queryByLabelText('Remove attachment')).toBeNull())
+  })
+
+  it('explains why before the phone asks for the camera, and takes the photo once allowed', async () => {
+    picker.getCameraPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: true } as never)
+    picker.requestCameraPermissionsAsync.mockResolvedValue({ granted: true, canAskAgain: true } as never)
+    picker.launchCameraAsync.mockResolvedValue({ canceled: true, assets: null })
+    const order: string[] = []
+    jest.spyOn(Alert, 'alert').mockImplementation((title, _text, buttons) => {
+      order.push(`explained: ${title}`)
+      buttons?.find((button) => button.text === 'Continue')?.onPress?.()
+    })
+    picker.requestCameraPermissionsAsync.mockImplementation(async () => {
+      order.push('asked')
+      return { granted: true, canAskAgain: true } as never
+    })
+    server({ history: [makeMessage({ content: 'Hi' })] })
+    await openChat()
+    await screen.findByText('Hi')
+
+    await chooseFromSheet('Take a photo')
+
+    await waitFor(() => expect(picker.launchCameraAsync).toHaveBeenCalled())
+    expect(order).toEqual(['explained: Use the camera?', 'asked'])
+  })
+
+  it('does not open the camera when the person says "Not now", and points to settings once it is blocked', async () => {
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined)
+    const alert = jest.spyOn(Alert, 'alert')
+    server({ history: [makeMessage({ content: 'Hi' })] })
+    await openChat()
+    await screen.findByText('Hi')
+
+    picker.getCameraPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: true } as never)
+    alert.mockImplementation((_title, _text, buttons) => buttons?.find((b) => b.text === 'Not now')?.onPress?.())
+    await chooseFromSheet('Take a photo')
+    await waitFor(() => expect(alert).toHaveBeenCalledTimes(1))
+    expect(picker.requestCameraPermissionsAsync).not.toHaveBeenCalled()
+
+    picker.getCameraPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: false } as never)
+    alert.mockImplementation((_title, _text, buttons) => buttons?.find((b) => b.text === 'Open settings')?.onPress?.())
+    await chooseFromSheet('Take a photo')
+    await waitFor(() => expect(openSettings).toHaveBeenCalled())
+    expect(alert).toHaveBeenLastCalledWith(
+      'Use the camera?',
+      expect.stringContaining('not allowed to use the camera'),
+      expect.any(Array),
+      expect.anything(),
+    )
+    expect(picker.launchCameraAsync).not.toHaveBeenCalled()
+  })
+
+  it('refuses a file over 25 MB before anything is uploaded', async () => {
+    documents.getDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/big.zip', name: 'big.zip', mimeType: 'application/zip', size: 30 * 1024 * 1024 }],
+    } as DocumentPicker.DocumentPickerResult)
+    const { calls } = server({ history: [makeMessage({ content: 'Hi' })] })
+    await openChat()
+    await screen.findByText('Hi')
+
+    await chooseFromSheet('File')
+
+    expect(await screen.findByText('That file is larger than 25 MB.')).toBeOnTheScreen()
+    expect(screen.queryByLabelText('Remove attachment')).toBeNull()
+    expect(calls.some((c) => c.url.endsWith('/attachments'))).toBe(false)
+  })
+
+  it('opens a file through the share sheet, asking for a fresh link first when the old one ran out', async () => {
+    const expired = attachment({ url: 'https://api.example.org/api/v1/attachments/att-1/file?expires=1&signature=old' })
+    const fileMessage = makeMessage({ type: 'file', content: null, attachment: expired })
+    const fresh = attachment({
+      url: `https://api.example.org/api/v1/attachments/att-1/file?expires=${Math.floor(Date.now() / 1000) + 3600}&signature=new`,
+    })
+    const { calls } = server({
+      history: [fileMessage],
+      extra: (call) =>
+        call.method === 'get' && call.url === `/messages/${fileMessage.id}`
+          ? { data: { data: { ...fileMessage, attachment: fresh } } }
+          : undefined,
+    })
+    await openChat()
+
+    await fireEvent.press(await screen.findByLabelText('Download Minutes.pdf'))
+
+    await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalled())
+    expect(calls.some((c) => c.url === `/messages/${fileMessage.id}`)).toBe(true)
+    expect(downloads).toEqual([{ url: fresh.url, to: 'file:///cache/attachments/att-1/Minutes.pdf' }])
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(
+      'file:///cache/attachments/att-1/Minutes.pdf',
+      expect.objectContaining({ mimeType: 'application/pdf' }),
+    )
+  })
+
+  it('opens a photo full screen and saves it to the phone’s photos', async () => {
+    jest.mocked(MediaLibrary.requestPermissionsAsync).mockResolvedValue({ granted: true } as never)
+    const photo = makeMessage({
+      type: 'image',
+      content: 'Sunday lunch',
+      attachment: attachment({ id: 'ph-1', original_name: 'lunch.jpg', mime_type: 'image/jpeg' }),
+    })
+    server({ history: [photo] })
+    await openChat()
+
+    await fireEvent.press(await screen.findByLabelText('Open photo'))
+    await fireEvent.press(await screen.findByLabelText('Save to photos'))
+
+    expect(await screen.findByText('Saved to your photos')).toBeOnTheScreen()
+    expect(MediaLibrary.requestPermissionsAsync).toHaveBeenCalledWith(true)
+    expect(MediaLibrary.Asset.create).toHaveBeenCalledWith('file:///cache/attachments/ph-1/lunch.jpg')
+    expect(screen.getByText('Sunday lunch')).toBeOnTheScreen()
   })
 })

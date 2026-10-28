@@ -30,9 +30,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: BUNDLE_ID,
     supportsTablet: true,
     infoPlist: {
-      // Asked only when the person picks a photo or takes one for their avatar (permission at the point of use).
-      NSPhotoLibraryUsageDescription: 'Kanyaw Connect uses your photos when you choose a profile picture.',
-      NSCameraUsageDescription: 'Kanyaw Connect uses the camera for video calls and for taking a profile picture.',
+      // Asked only at the point of use: choosing or taking a photo, saving one from a chat, a call, a recording.
+      NSPhotoLibraryUsageDescription:
+        'Kanyaw Connect uses the photos you choose for your profile picture or to send in a chat.',
+      NSPhotoLibraryAddUsageDescription: 'Kanyaw Connect saves a photo from a chat to your photos when you ask it to.',
+      NSCameraUsageDescription:
+        'Kanyaw Connect uses the camera for video calls, and to take a profile picture or a photo to send.',
       NSMicrophoneUsageDescription: 'Kanyaw Connect uses the microphone for calls and voice messages.',
     },
   },
@@ -49,7 +52,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // "Display over other apps": the WebRTC plugin asks for it, nothing here needs it (incoming calls use a
     // full-screen notification, 8E), and Google Play reviews it closely. Debug builds keep it from React Native's
     // own debug manifest, which takes priority, for the developer menu.
-    blockedPermissions: ['android.permission.SYSTEM_ALERT_WINDOW'],
+    //
+    // Reading the whole photo library: the app never does (the system photo picker hands over only what is chosen,
+    // and saving a photo needs no permission on Android 10 and later), and Google Play only allows it for apps built
+    // around a photo library. expo-media-library would otherwise add them.
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_AUDIO',
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+    ],
   },
   plugins: [
     'expo-router',
@@ -58,11 +71,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Push notifications. The server sends message notifications on the `messages` channel (see push/phonePush).
     ['expo-notifications', { color: '#1D4E89', defaultChannel: 'messages' }],
     'expo-localization',
+    // "Save to photos" in the photo viewer: only adding photos is ever asked for, never reading the library.
+    [
+      'expo-media-library',
+      {
+        photosPermission: 'Kanyaw Connect uses the photos you choose for your profile picture or to send in a chat.',
+        savePhotosPermission: 'Kanyaw Connect saves a photo from a chat to your photos when you ask it to.',
+        granularPermissions: [],
+      },
+    ],
     [
       'expo-image-picker',
       {
-        photosPermission: 'Kanyaw Connect uses your photos when you choose a profile picture.',
-        cameraPermission: 'Kanyaw Connect uses the camera for video calls and for taking a profile picture.',
+        photosPermission: 'Kanyaw Connect uses the photos you choose for your profile picture or to send in a chat.',
+        cameraPermission:
+          'Kanyaw Connect uses the camera for video calls, and to take a profile picture or a photo to send.',
         // Not `false`: that removes RECORD_AUDIO from the whole app (the plugin blocks the permission), and calls
         // and voice messages need it. The picker itself never records.
         microphonePermission: 'Kanyaw Connect uses the microphone for calls and voice messages.',

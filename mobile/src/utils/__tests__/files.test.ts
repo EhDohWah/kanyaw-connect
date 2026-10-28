@@ -32,3 +32,19 @@ describe('uuid (phone)', () => {
     expect(uuid()).not.toBe(uuid())
   })
 })
+
+describe('linkExpired', () => {
+  const now = Date.parse('2026-03-14T09:00:00Z')
+  const at = (seconds: number) => `https://api.example.org/api/v1/attachments/a1/file?expires=${seconds}&signature=abc`
+
+  it('is true once the signed link has run out, and a little before (so a tap does not land on an error)', () => {
+    expect(linkExpired(at(now / 1000 - 1), now)).toBe(true)
+    expect(linkExpired(at(now / 1000 + 10), now)).toBe(true)
+    expect(linkExpired(at(now / 1000 + 600), now)).toBe(false)
+  })
+
+  it('treats a link without an end as good, and does not break on a local file', () => {
+    expect(linkExpired('https://api.example.org/file', now)).toBe(false)
+    expect(linkExpired('file:///data/cache/photo.jpg', now)).toBe(false)
+  })
+})

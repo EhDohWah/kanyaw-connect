@@ -27,7 +27,10 @@
     "next": "Next",
     "done": "Done",
     "you": "You",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "notNow": "Not now",
+    "continue": "Continue",
+    "openSettings": "Open settings"
   },
   "nav": {
     "home": "Home",
@@ -299,7 +302,12 @@
     },
     "viewer": {
       "title": "Photo",
-      "download": "Download photo"
+      "download": "Download photo",
+      "save": "Save to photos",
+      "saved": "Saved to your photos",
+      "saveFailed": "The photo could not be saved.",
+      "saveBlocked": "Kanyaw Connect is not allowed to save photos. You can allow it in your phone's settings.",
+      "share": "Share"
     },
     "typing": {
       "one": "{name} is typing…",
@@ -315,6 +323,16 @@
       "collapse": "Collapse messages",
       "expand": "Open messages",
       "backToList": "Back to the list"
+    },
+    "attach": {
+      "title": "Attach",
+      "library": "Photo library",
+      "camera": "Take a photo",
+      "file": "File",
+      "cameraTitle": "Use the camera?",
+      "cameraReason": "Kanyaw Connect uses the camera only to take the photo you send in this chat. Your phone will ask you to allow it.",
+      "cameraBlocked": "Kanyaw Connect is not allowed to use the camera. You can allow it in your phone's settings.",
+      "unreadable": "That file could not be read. Please choose another one."
     }
   },
   "message": {
@@ -339,7 +357,8 @@
     "voiceMessage": "Voice message",
     "photoFrom": "Photo from {name}",
     "replyTo": "Reply to {name}",
-    "fromYou": "you"
+    "fromYou": "you",
+    "openFailed": "This file could not be opened. Please try again."
   },
   "group": {
     "newTitle": "New group",

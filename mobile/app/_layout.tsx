@@ -4,6 +4,8 @@ import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { StyleSheet } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -26,8 +28,9 @@ export default function RootLayout() {
   if (status === 'restoring') return null
   const signedIn = status === 'signedIn'
 
+  // The gesture root (pinch-to-zoom in the photo viewer) wraps everything once, at the top.
   return (
-    <>
+    <GestureHandlerRootView style={styles.root}>
       <StatusBar style="dark" />
       {/* Signed out, only sign-in and create-account exist; signed in, only the app. Signing in or out moves to the
           other side (sign-in is the first screen, so it is where a signed-out person lands) and clears the history. */}
@@ -40,6 +43,8 @@ export default function RootLayout() {
           <Stack.Screen name="(app)" />
         </Stack.Protected>
       </Stack>
-    </>
+    </GestureHandlerRootView>
   )
 }
+
+const styles = StyleSheet.create({ root: { flex: 1 } })
