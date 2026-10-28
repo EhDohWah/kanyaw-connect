@@ -8,7 +8,7 @@ and are never ticked from an emulator. Where the app deliberately differs from t
 | Part | Status |
 |---|---|
 | 8A. Foundation | Built; reviewed by you on 26 Oct 2026, runs on a Redmi Note 11 (two device checks still to confirm, below) |
-| 8B. Backend: native push, call pushes, account deletion | Built; real test push confirmed on the Redmi (27 Oct 2026); a message notification with the app closed still to confirm |
+| 8B. Backend: native push, call pushes, account deletion | Done for Android: test push and message notifications confirmed on the Redmi (27–28 Oct 2026). iOS waits for the Apple keys |
 | 8C. Messaging and voice messages | Not started |
 | 8D. Meetings | Not started |
 | 8E. One-to-one calls (native ringing) | Not started |
@@ -228,9 +228,11 @@ All in the Laravel app at the root; nothing in `mobile/` yet (the app registers 
   Docker): `push:test` answered `sent` every time and the notification appeared. Found on the way: the backend `.env`
   needs `FCM_CREDENTIALS` (Docker reads it only when the containers are recreated, `docker compose up -d`), and
   `google-services.json` belongs in `mobile/`, the service-account key on the server.
-- [ ] **A message notification while the app is closed** (the queue and the "app is open" rule): still to confirm.
-  Close the app, wait two minutes (the server counts you online for 90 seconds after the last heartbeat, and the web
-  app counts too), then send a message from another account.
+- [x] **A message notification with the app in the background** (you, 28 Oct 2026, Redmi Note 11, Android 13): a
+  message sent from the web arrived as a notification. Needed first: the `message_kind` fix (see below). Note for 8F:
+  on Xiaomi, swiping the app away can stop it completely, and Android then delivers no push until it is opened again;
+  the app should point people to Autostart and "No restrictions" battery saving.
+- [ ] **iOS:** not tried yet (needs an Apple Developer membership and the APNs key).
 
 ### Found while building
 
